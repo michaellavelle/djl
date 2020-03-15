@@ -62,8 +62,7 @@ public final class TrainMnistWithLSTM {
             // setup training configuration
             DefaultTrainingConfig config = setupTrainingConfig(arguments);
             config.addTrainingListeners(
-                    TrainingListener.Defaults.logging(
-                            arguments.getOutputDir()));
+                    TrainingListener.Defaults.logging(arguments.getOutputDir()));
 
             ExampleTrainingResult result;
             try (Trainer trainer = model.newTrainer(config)) {
