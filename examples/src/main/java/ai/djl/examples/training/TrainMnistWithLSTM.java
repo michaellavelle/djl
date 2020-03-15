@@ -63,10 +63,6 @@ public final class TrainMnistWithLSTM {
             DefaultTrainingConfig config = setupTrainingConfig(arguments);
             config.addTrainingListeners(
                     TrainingListener.Defaults.logging(
-                            "LSTMListener",
-                            arguments.getBatchSize(),
-                            (int) trainingSet.getNumIterations(),
-                            (int) validateSet.getNumIterations(),
                             arguments.getOutputDir()));
 
             ExampleTrainingResult result;
@@ -115,7 +111,6 @@ public final class TrainMnistWithLSTM {
     public static DefaultTrainingConfig setupTrainingConfig(Arguments arguments) {
         return new DefaultTrainingConfig(Loss.softmaxCrossEntropyLoss())
                 .addEvaluator(new Accuracy())
-                .setBatchSize(arguments.getBatchSize())
                 .optInitializer(new XavierInitializer())
                 .optDevices(Device.getDevices(arguments.getMaxGpus()));
     }
