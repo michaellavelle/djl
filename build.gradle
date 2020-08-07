@@ -1,16 +1,13 @@
 plugins {
-    id "com.github.spotbugs" version "2.0.0" apply false
+    id "com.github.spotbugs" version "4.2.0" apply false
 }
-
-// workaround gradle bug
-ext.SpotBugsTask = com.github.spotbugs.SpotBugsTask
 
 defaultTasks 'build'
 
 allprojects {
     group 'ai.djl'
     boolean isRelease = project.hasProperty("release") || project.hasProperty("staging")
-    version = "0.5.0" + (isRelease ? "" : "-SNAPSHOT")
+    version = "0.7.0" + (isRelease ? "" : "-SNAPSHOT")
 
     repositories {
         jcenter()
@@ -35,12 +32,17 @@ configure(javaProjects()) {
     sourceCompatibility = 1.8
     targetCompatibility = 1.8
     compileJava.options.encoding = "UTF-8"
+    compileTestJava.options.encoding = "UTF-8"
+    if (JavaVersion.current() != JavaVersion.VERSION_1_8) {
+        compileJava.options.compilerArgs.addAll(["--release", "8"])
+    }
 
     apply from: file("${rootProject.projectDir}/tools/gradle/java-formatter.gradle")
     apply from: file("${rootProject.projectDir}/tools/gradle/check.gradle")
 
     test {
-        maxHeapSize = "1024m"
+        // tensorflow mobilenet and resnet require more cpu memory
+        maxHeapSize = "4096m"
         doFirst {
             if (JavaVersion.current() != JavaVersion.VERSION_1_8) {
                 jvmArgs = [

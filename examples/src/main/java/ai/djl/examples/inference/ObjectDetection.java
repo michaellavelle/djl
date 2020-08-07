@@ -14,22 +14,22 @@ package ai.djl.examples.inference;
 
 import ai.djl.Application;
 import ai.djl.ModelException;
+import ai.djl.engine.Engine;
 import ai.djl.inference.Predictor;
-import ai.djl.modality.cv.ImageVisualization;
+import ai.djl.modality.cv.Image;
+import ai.djl.modality.cv.ImageFactory;
 import ai.djl.modality.cv.output.DetectedObjects;
-import ai.djl.modality.cv.util.BufferedImageUtils;
 import ai.djl.repository.zoo.Criteria;
 import ai.djl.repository.zoo.ModelZoo;
 import ai.djl.repository.zoo.ZooModel;
 import ai.djl.training.util.ProgressBar;
 import ai.djl.translate.TranslateException;
-import java.awt.Graphics2D;
-import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import javax.imageio.ImageIO;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,18 +53,26 @@ public final class ObjectDetection {
 
     public static DetectedObjects predict() throws IOException, ModelException, TranslateException {
         Path imageFile = Paths.get("src/test/resources/dog_bike_car.jpg");
-        BufferedImage img = BufferedImageUtils.fromFile(imageFile);
+        Image img = ImageFactory.getInstance().fromFile(imageFile);
+        String backbone = "resnet50";
+        Map<String, Object> options = null;
+        if ("TensorFlow".equals(Engine.getInstance().getEngineName())) {
+            backbone = "mobilenet_v2";
+            options = new ConcurrentHashMap<>();
+            options.put("Tags", new String[] {});
+        }
 
-        Criteria<BufferedImage, DetectedObjects> criteria =
+        Criteria<Image, DetectedObjects> criteria =
                 Criteria.builder()
                         .optApplication(Application.CV.OBJECT_DETECTION)
-                        .setTypes(BufferedImage.class, DetectedObjects.class)
-                        .optFilter("backbone", "resnet50")
+                        .setTypes(Image.class, DetectedObjects.class)
+                        .optFilter("backbone", backbone)
+                        .optOptions(options)
                         .optProgress(new ProgressBar())
                         .build();
 
-        try (ZooModel<BufferedImage, DetectedObjects> model = ModelZoo.loadModel(criteria)) {
-            try (Predictor<BufferedImage, DetectedObjects> predictor = model.newPredictor()) {
+        try (ZooModel<Image, DetectedObjects> model = ModelZoo.loadModel(criteria)) {
+            try (Predictor<Image, DetectedObjects> predictor = model.newPredictor()) {
                 DetectedObjects detection = predictor.predict(img);
                 saveBoundingBoxImage(img, detection);
                 return detection;
@@ -72,22 +80,18 @@ public final class ObjectDetection {
         }
     }
 
-    private static void saveBoundingBoxImage(BufferedImage img, DetectedObjects detection)
+    private static void saveBoundingBoxImage(Image img, DetectedObjects detection)
             throws IOException {
         Path outputDir = Paths.get("build/output");
         Files.createDirectories(outputDir);
 
         // Make image copy with alpha channel because original image was jpg
-        BufferedImage newImage =
-                new BufferedImage(img.getWidth(), img.getHeight(), BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g = newImage.createGraphics();
-        g.drawImage(img, 0, 0, null);
-        g.dispose();
-        ImageVisualization.drawBoundingBoxes(newImage, detection);
+        Image newImage = img.duplicate(Image.Type.TYPE_INT_ARGB);
+        newImage.drawBoundingBoxes(detection);
 
         Path imagePath = outputDir.resolve("detected-dog_bike_car.png");
         // OpenJDK can't save jpg with alpha channel
-        ImageIO.write(newImage, "png", imagePath.toFile());
+        newImage.save(Files.newOutputStream(imagePath), "png");
         logger.info("Detected objects image has been saved in: {}", imagePath);
     }
 }

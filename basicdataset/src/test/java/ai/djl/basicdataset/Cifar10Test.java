@@ -20,8 +20,8 @@ import ai.djl.training.Trainer;
 import ai.djl.training.TrainingConfig;
 import ai.djl.training.dataset.Batch;
 import ai.djl.training.dataset.Dataset.Usage;
-import ai.djl.training.initializer.Initializer;
 import ai.djl.training.loss.Loss;
+import ai.djl.translate.TranslateException;
 import java.io.IOException;
 import org.testng.Assert;
 import org.testng.annotations.Test;
@@ -29,12 +29,10 @@ import org.testng.annotations.Test;
 public class Cifar10Test {
 
     @Test
-    public void testCifar10Local() throws IOException {
-        TrainingConfig config =
-                new DefaultTrainingConfig(Loss.softmaxCrossEntropyLoss())
-                        .optInitializer(Initializer.ONES);
+    public void testCifar10Local() throws IOException, TranslateException {
+        TrainingConfig config = new DefaultTrainingConfig(Loss.softmaxCrossEntropyLoss());
 
-        try (Model model = Model.newInstance()) {
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(Blocks.identityBlock());
             int batchSize = config.getDevices().length * 32;
 
@@ -47,7 +45,6 @@ public class Cifar10Test {
                             .setSampling(batchSize, true)
                             .build();
 
-            cifar10.prepare();
             try (Trainer trainer = model.newTrainer(config)) {
                 for (Batch batch : trainer.iterateDataset(cifar10)) {
                     Assert.assertEquals(batch.getData().size(), 1);
@@ -59,12 +56,10 @@ public class Cifar10Test {
     }
 
     @Test
-    public void testCifar10Remote() throws IOException {
-        TrainingConfig config =
-                new DefaultTrainingConfig(Loss.softmaxCrossEntropyLoss())
-                        .optInitializer(Initializer.ONES);
+    public void testCifar10Remote() throws IOException, TranslateException {
+        TrainingConfig config = new DefaultTrainingConfig(Loss.softmaxCrossEntropyLoss());
 
-        try (Model model = Model.newInstance()) {
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(Blocks.identityBlock());
 
             Cifar10 cifar10 =
@@ -74,7 +69,6 @@ public class Cifar10Test {
                             .setSampling(32, true)
                             .build();
 
-            cifar10.prepare();
             try (Trainer trainer = model.newTrainer(config)) {
                 for (Batch batch : trainer.iterateDataset(cifar10)) {
                     Assert.assertEquals(batch.getData().size(), 1);

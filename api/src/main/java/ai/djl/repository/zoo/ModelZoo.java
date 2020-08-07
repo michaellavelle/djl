@@ -24,6 +24,8 @@ import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.TreeMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** An interface represents a collection of models. */
 public interface ModelZoo {
@@ -93,31 +95,62 @@ public interface ModelZoo {
      */
     static <I, O> ZooModel<I, O> loadModel(Criteria<I, O> criteria)
             throws IOException, ModelNotFoundException, MalformedModelException {
+        Logger logger = LoggerFactory.getLogger(ModelZoo.class);
+        String artifactId = criteria.getArtifactId();
+        ModelZoo modelZoo = criteria.getModelZoo();
         String groupId = criteria.getGroupId();
-        ServiceLoader<ZooProvider> providers = ServiceLoader.load(ZooProvider.class);
-        for (ZooProvider provider : providers) {
-            ModelZoo zoo = provider.getModelZoo();
-            if (zoo == null) {
-                continue;
-            }
-            if (groupId != null && !zoo.getGroupId().equals(groupId)) {
-                // filter out ModelZoo by groupId
-                continue;
-            }
+        String engine = criteria.getEngine();
+        Application application = criteria.getApplication();
 
-            Set<String> supportedEngine = zoo.getSupportedEngines();
-            if (!supportedEngine.contains(criteria.getEngine())) {
-                continue;
+        List<ModelZoo> list = new ArrayList<>();
+        if (modelZoo != null) {
+            logger.debug("Searching model in specified model zoo: {}", modelZoo.getGroupId());
+            if (groupId != null && !modelZoo.getGroupId().equals(groupId)) {
+                throw new ModelNotFoundException("groupId conflict with ModelZoo criteria.");
             }
+            Set<String> supportedEngine = modelZoo.getSupportedEngines();
+            if (engine != null && !supportedEngine.contains(engine)) {
+                throw new ModelNotFoundException(
+                        "ModelZoo doesn't support specified with engine: " + engine);
+            }
+            list.add(modelZoo);
+        } else {
+            ServiceLoader<ZooProvider> providers = ServiceLoader.load(ZooProvider.class);
+            for (ZooProvider provider : providers) {
+                logger.debug("Searching model in zoo provider: {}", provider.getName());
+                ModelZoo zoo = provider.getModelZoo();
+                if (zoo == null) {
+                    logger.debug("No model zoo found in zoo provider: {}", provider.getName());
+                    continue;
+                }
+                if (groupId != null && !zoo.getGroupId().equals(groupId)) {
+                    // filter out ModelZoo by groupId
+                    logger.debug("Ignored ModelZoo by groupId: {}", zoo.getGroupId());
+                    continue;
+                }
+                Set<String> supportedEngine = zoo.getSupportedEngines();
+                if (engine != null && !supportedEngine.contains(engine)) {
+                    logger.debug("Ignored ModelZoo by specified engine: {}", zoo.getGroupId());
+                    continue;
+                }
+                list.add(zoo);
+            }
+        }
 
-            Application application = criteria.getApplication();
-            String artifactId = criteria.getArtifactId();
+        for (ModelZoo zoo : list) {
+            String loaderGroupId = zoo.getGroupId();
             for (ModelLoader<?, ?> loader : zoo.getModelLoaders()) {
-                if (artifactId != null && !artifactId.equals(loader.getArtifactId())) {
+                Application app = loader.getApplication();
+                String loaderArtifactId = loader.getArtifactId();
+                logger.debug(
+                        "Checking ModelLoader: {} {}:{}",
+                        app.getPath(),
+                        loaderGroupId,
+                        loaderArtifactId);
+                if (artifactId != null && !artifactId.equals(loaderArtifactId)) {
                     // filter out by model loader artifactId
                     continue;
                 }
-                Application app = loader.getApplication();
                 if (application != null
                         && app != Application.UNDEFINED
                         && !app.equals(application)) {
@@ -128,7 +161,11 @@ public interface ModelZoo {
                 try {
                     return loader.loadModel(criteria);
                 } catch (ModelNotFoundException e) {
-                    // ignore
+                    logger.debug(
+                            "input/output type found for ModelLoader: {} {}:{}",
+                            app,
+                            groupId,
+                            loaderArtifactId);
                 }
             }
         }

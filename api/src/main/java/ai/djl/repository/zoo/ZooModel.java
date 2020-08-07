@@ -54,14 +54,29 @@ public class ZooModel<I, O> implements Model {
 
     /** {@inheritDoc} */
     @Override
-    public void load(Path modelPath, String modelName, Map<String, Object> options) {
+    public void load(Path modelPath, String prefix, Map<String, Object> options) {
         throw new IllegalArgumentException("ZooModel should not be re-loaded.");
+    }
+
+    /**
+     * Returns the wrapped model.
+     *
+     * @return the wrapped model
+     */
+    public Model getWrappedModel() {
+        return model;
     }
 
     /** {@inheritDoc} */
     @Override
     public void save(Path modelPath, String modelName) throws IOException {
         model.save(modelPath, modelName);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public Path getModelPath() {
+        return model.getModelPath();
     }
 
     /** {@inheritDoc} */

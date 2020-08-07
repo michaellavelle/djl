@@ -16,7 +16,8 @@ import ai.djl.Device;
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.internal.NDArrayEx;
-import ai.djl.training.optimizer.learningrate.LearningRateTracker;
+import ai.djl.training.tracker.Tracker;
+import ai.djl.util.Preconditions;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -27,14 +28,14 @@ import java.util.concurrent.ConcurrentHashMap;
  * <br>
  * \( m = beta1 * m + (1 - beta1) * grad\)<br>
  * \( v = beta2 * v + (1 - beta2) * grad^2 \)<br>
- * \( w += - learning_rate * m / (sqrt(v) + epsilon) \)<br>
+ * \( w -= learning_rate * m / (sqrt(v) + epsilon) \)<br>
  * <br>
  * where g represents the gradient, and m/v are 1st and 2nd order moment estimates (mean and
  * variance).
  */
 public class Adam extends Optimizer {
 
-    private LearningRateTracker learningRateTracker;
+    private Tracker learningRateTracker;
     private float beta1;
     private float beta2;
     private float epsilon;
@@ -63,16 +64,16 @@ public class Adam extends Optimizer {
         int t = updateCount(parameterId);
         double coef1 = 1.0 - Math.pow(beta1, t);
         double coef2 = 1.0 - Math.pow(beta2, t);
-        float lr = learningRateTracker.getNewLearningRate(t);
+        float lr = learningRateTracker.getNewValue(t);
         float newLearningRate = (float) (lr * Math.sqrt(coef2) / coef1);
         float weightDecay = getWeightDecay();
 
-        if (Float.isNaN(newLearningRate)
-                || Float.isNaN(weightDecay)
-                || Float.isInfinite(newLearningRate)
-                || Float.isInfinite(weightDecay)) {
-            throw new IllegalStateException("learning rate or weight decay is nan or infinite");
-        }
+        Preconditions.checkArgument(
+                !Float.isNaN(newLearningRate)
+                        && !Float.isNaN(weightDecay)
+                        && !Float.isInfinite(newLearningRate)
+                        && !Float.isInfinite(weightDecay),
+                "learning rate or weight decay is nan or infinite");
         NDList inputs =
                 new NDList(
                         weight,
@@ -113,8 +114,7 @@ public class Adam extends Optimizer {
     /** The Builder to construct an {@link Adam} object. */
     public static final class Builder extends OptimizerBuilder<Builder> {
 
-        private LearningRateTracker learningRateTracker =
-                LearningRateTracker.fixedLearningRate(0.001f);
+        private Tracker learningRateTracker = Tracker.fixed(0.001f);
         private float beta1 = 0.9f;
         private float beta2 = 0.999f;
         private float epsilon = 1e-8f;
@@ -128,12 +128,12 @@ public class Adam extends Optimizer {
         }
 
         /**
-         * Sets the {@link LearningRateTracker} for this optimizer.
+         * Sets the {@link Tracker} for this optimizer.
          *
-         * @param learningRateTracker the {@link LearningRateTracker} to be set
+         * @param learningRateTracker the {@link Tracker} to be set
          * @return this {@code Builder}
          */
-        public Builder optLearningRateTracker(LearningRateTracker learningRateTracker) {
+        public Builder optLearningRateTracker(Tracker learningRateTracker) {
             this.learningRateTracker = learningRateTracker;
             return this;
         }

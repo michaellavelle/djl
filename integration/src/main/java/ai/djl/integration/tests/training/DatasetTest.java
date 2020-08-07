@@ -30,6 +30,7 @@ import ai.djl.training.dataset.RandomSampler;
 import ai.djl.training.dataset.SequenceSampler;
 import ai.djl.training.initializer.Initializer;
 import ai.djl.training.loss.Loss;
+import ai.djl.translate.TranslateException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -48,8 +49,8 @@ public class DatasetTest {
             new DefaultTrainingConfig(Loss.l2Loss()).optInitializer(Initializer.ONES);
 
     @Test
-    public void testSequenceSampler() {
-        try (Model model = Model.newInstance()) {
+    public void testSequenceSampler() throws IOException, TranslateException {
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(Blocks.identityBlock());
 
             NDManager manager = model.getNDManager();
@@ -77,8 +78,8 @@ public class DatasetTest {
     }
 
     @Test
-    public void testRandomSampler() {
-        try (Model model = Model.newInstance()) {
+    public void testRandomSampler() throws IOException, TranslateException {
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(Blocks.identityBlock());
 
             NDManager manager = model.getNDManager();
@@ -104,8 +105,8 @@ public class DatasetTest {
     }
 
     @Test
-    public void testBatchSampler() {
-        try (Model model = Model.newInstance()) {
+    public void testBatchSampler() throws IOException, TranslateException {
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(Blocks.identityBlock());
 
             NDManager manager = model.getNDManager();
@@ -187,8 +188,8 @@ public class DatasetTest {
     }
 
     @Test
-    public void testArrayDataset() {
-        try (Model model = Model.newInstance()) {
+    public void testArrayDataset() throws IOException, TranslateException {
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(Blocks.identityBlock());
 
             NDManager manager = model.getNDManager();
@@ -265,8 +266,8 @@ public class DatasetTest {
     }
 
     @Test
-    public void testMultithreading() throws IOException, InterruptedException {
-        try (Model model = Model.newInstance()) {
+    public void testMultithreading() throws IOException, InterruptedException, TranslateException {
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(Blocks.identityBlock());
             NDManager manager = model.getNDManager();
 
@@ -282,7 +283,6 @@ public class DatasetTest {
                             .optExecutor(executor, 4)
                             .build();
 
-            cifar10.prepare();
             try (Trainer trainer = model.newTrainer(config)) {
                 for (Batch batch : trainer.iterateDataset(cifar10)) {
                     batch.close();

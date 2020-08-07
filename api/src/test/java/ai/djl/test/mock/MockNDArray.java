@@ -17,7 +17,7 @@ import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.NDManager;
 import ai.djl.ndarray.index.NDIndex;
-import ai.djl.ndarray.index.NDIndexFixed;
+import ai.djl.ndarray.index.dim.NDIndexFixed;
 import ai.djl.ndarray.internal.NDArrayEx;
 import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
@@ -29,7 +29,6 @@ import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.nio.LongBuffer;
 import java.util.UUID;
-import java.util.function.Predicate;
 
 public class MockNDArray implements NDArray {
 
@@ -137,6 +136,11 @@ public class MockNDArray implements NDArray {
         return null;
     }
 
+    @Override
+    public boolean hasGradient() {
+        return false;
+    }
+
     /** {@inheritDoc} */
     @Override
     public ByteBuffer toByteBuffer() {
@@ -207,6 +211,21 @@ public class MockNDArray implements NDArray {
 
     /** {@inheritDoc} */
     @Override
+    public void attach(NDManager manager) {
+        detach();
+        this.manager = manager;
+        manager.attach(getUid(), this);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void detach() {
+        manager.detach(getUid());
+        manager = null;
+    }
+
+    /** {@inheritDoc} */
+    @Override
     public void copyTo(NDArray array) {}
 
     /** {@inheritDoc} */
@@ -259,7 +278,7 @@ public class MockNDArray implements NDArray {
 
     /** {@inheritDoc} */
     @Override
-    public NDArray eq(Number other) {
+    public NDArray eq(Number n) {
         return null;
     }
 
@@ -271,7 +290,7 @@ public class MockNDArray implements NDArray {
 
     /** {@inheritDoc} */
     @Override
-    public NDArray neq(Number other) {
+    public NDArray neq(Number n) {
         return null;
     }
 
@@ -283,7 +302,7 @@ public class MockNDArray implements NDArray {
 
     /** {@inheritDoc} */
     @Override
-    public NDArray gt(Number other) {
+    public NDArray gt(Number n) {
         return null;
     }
 
@@ -295,7 +314,7 @@ public class MockNDArray implements NDArray {
 
     /** {@inheritDoc} */
     @Override
-    public NDArray gte(Number other) {
+    public NDArray gte(Number n) {
         return null;
     }
 
@@ -307,7 +326,7 @@ public class MockNDArray implements NDArray {
 
     /** {@inheritDoc} */
     @Override
-    public NDArray lt(Number other) {
+    public NDArray lt(Number n) {
         return null;
     }
 
@@ -319,7 +338,7 @@ public class MockNDArray implements NDArray {
 
     /** {@inheritDoc} */
     @Override
-    public NDArray lte(Number other) {
+    public NDArray lte(Number n) {
         return null;
     }
 
@@ -491,6 +510,18 @@ public class MockNDArray implements NDArray {
     /** {@inheritDoc} */
     @Override
     public NDArray powi(NDArray other) {
+        return null;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public NDArray sign() {
+        return null;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public NDArray signi() {
         return null;
     }
 
@@ -794,12 +825,6 @@ public class MockNDArray implements NDArray {
 
     /** {@inheritDoc} */
     @Override
-    public NDArray reshapeLike(NDArray array) {
-        return null;
-    }
-
-    /** {@inheritDoc} */
-    @Override
     public NDArray expandDims(int axis) {
         return null;
     }
@@ -854,13 +879,13 @@ public class MockNDArray implements NDArray {
 
     /** {@inheritDoc} */
     @Override
-    public NDArray softmax(int[] axes, float temperature) {
+    public NDArray softmax(int axis) {
         return null;
     }
 
     /** {@inheritDoc} */
     @Override
-    public NDArray logSoftmax(int[] axes, float temperature) {
+    public NDArray logSoftmax(int axis) {
         return null;
     }
 
@@ -897,18 +922,6 @@ public class MockNDArray implements NDArray {
     /** {@inheritDoc} */
     @Override
     public NDArray isNaN() {
-        return null;
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public NDArray createMask(NDIndex index) {
-        return null;
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public NDArray createMask(Predicate<Number> predicate) {
         return null;
     }
 
@@ -981,6 +994,11 @@ public class MockNDArray implements NDArray {
     /** {@inheritDoc} */
     @Override
     public NDArray swapAxes(int axis1, int axis2) {
+        return null;
+    }
+
+    @Override
+    public NDArray flip(int... axes) {
         return null;
     }
 

@@ -35,7 +35,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,20 +49,19 @@ import org.slf4j.LoggerFactory;
 public class MxModel extends BaseModel {
 
     private static final Logger logger = LoggerFactory.getLogger(MxModel.class);
-    // the variable is used to avoid ParameterStore copy for the first time
-    private AtomicBoolean first;
 
     /**
      * Constructs a new Model on a given device.
      *
+     * @param name the model name
      * @param device the device the model should be located on
      */
-    MxModel(Device device) {
+    MxModel(String name, Device device) {
+        super(name);
         device = Device.defaultIfNull(device);
         dataType = DataType.FLOAT32;
         properties = new ConcurrentHashMap<>();
         manager = MxNDManager.getSystemManager().newSubManager(device);
-        first = new AtomicBoolean(true);
     }
 
     /**
@@ -80,28 +78,41 @@ public class MxModel extends BaseModel {
      * </pre>
      *
      * @param modelPath the directory of the model
-     * @param modelName the name/prefix of the model
+     * @param prefix the model file name or path prefix
      * @param options load model options, see documentation for the specific engine
      * @throws IOException Exception for file loading
      */
     @Override
-    public void load(Path modelPath, String modelName, Map<String, Object> options)
+    public void load(Path modelPath, String prefix, Map<String, Object> options)
             throws IOException, MalformedModelException {
         modelDir = modelPath.toAbsolutePath();
-        this.modelName = modelName;
+        if (prefix == null) {
+            prefix = modelName;
+        }
+        Path paramFile = paramPathResolver(prefix, options);
+        if (paramFile == null) {
+            prefix = modelDir.toFile().getName();
+            paramFile = paramPathResolver(prefix, options);
+            if (paramFile == null) {
+                throw new IOException("Parameter file not found in: " + modelDir);
+            }
+        }
+
         if (block == null) {
             // load MxSymbolBlock
-            Path symbolFile = modelDir.resolve(modelName + "-symbol.json");
+            Path symbolFile = modelDir.resolve(prefix + "-symbol.json");
             if (Files.notExists(symbolFile)) {
                 throw new FileNotFoundException(
-                        "Symbol file not found in: " + modelPath + ", please set block manually.");
+                        "Symbol file not found: "
+                                + symbolFile
+                                + ", please set block manually for imperative model.");
             }
             Symbol symbol =
                     Symbol.load((MxNDManager) manager, symbolFile.toAbsolutePath().toString());
             // TODO: change default name "data" to model-specific one
             block = new MxSymbolBlock(manager, symbol);
         }
-        loadParameters(modelName, options);
+        loadParameters(paramFile, options);
         // TODO: Check if Symbol has all names that params file have
     }
 
@@ -121,9 +132,7 @@ public class MxModel extends BaseModel {
     /** {@inheritDoc} */
     @Override
     public <I, O> Predictor<I, O> newPredictor(Translator<I, O> translator) {
-        boolean firstPredictor = first.getAndSet(false);
-        boolean shouldCopyParameters = !JnaUtils.useThreadSafePredictor() && !firstPredictor;
-        return new Predictor<>(this, translator, shouldCopyParameters);
+        return new Predictor<>(this, translator, false);
     }
 
     /** {@inheritDoc} */
@@ -163,13 +172,12 @@ public class MxModel extends BaseModel {
     }
 
     @SuppressWarnings("PMD.UseConcurrentHashMap")
-    private void loadParameters(String modelName, Map<String, Object> options)
+    private void loadParameters(Path paramFile, Map<String, Object> options)
             throws IOException, MalformedModelException {
-        if (readParameters(options)) {
+        if (readParameters(paramFile, options)) {
             return;
         }
         logger.debug("DJL formatted model not found, try to find MXNet model");
-        Path paramFile = paramPathResolver(options);
         NDList paramNDlist = manager.load(paramFile);
 
         MxSymbolBlock symbolBlock = (MxSymbolBlock) block;
@@ -192,7 +200,7 @@ public class MxModel extends BaseModel {
 
         // TODO: Find a better to infer model DataType from SymbolBlock.
         dataType = paramNDlist.head().getDataType();
-        logger.debug("MXNet Model {} ({}) loaded successfully.", modelName, dataType);
+        logger.debug("MXNet Model {} ({}) loaded successfully.", paramFile, dataType);
     }
 
     /** {@inheritDoc} */

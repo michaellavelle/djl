@@ -21,6 +21,7 @@ import ai.djl.ndarray.types.DataType;
 import ai.djl.pytorch.jni.JniUtils;
 import ai.djl.training.Trainer;
 import ai.djl.training.TrainingConfig;
+import ai.djl.training.initializer.Initializer;
 import ai.djl.translate.Translator;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -42,9 +43,11 @@ public class PtModel extends BaseModel {
     /**
      * Constructs a new Model on a given device.
      *
+     * @param name the model name
      * @param device the device the model should be located on
      */
-    PtModel(Device device) {
+    PtModel(String name, Device device) {
+        super(name);
         device = Device.defaultIfNull(device);
         manager = PtNDManager.getSystemManager().newSubManager(device);
         dataType = DataType.FLOAT32;
@@ -52,25 +55,59 @@ public class PtModel extends BaseModel {
 
     /** {@inheritDoc} */
     @Override
-    public void load(Path modelPath, String modelName, Map<String, Object> options)
+    public void load(Path modelPath, String prefix, Map<String, Object> options)
             throws IOException, MalformedModelException {
         modelDir = modelPath.toAbsolutePath();
-        this.modelName = modelName;
+        if (prefix == null) {
+            prefix = modelName;
+        }
         if (block == null) {
-            Path modelFile = modelDir.resolve(modelName + ".pt");
-            if (Files.notExists(modelFile)) {
-                throw new FileNotFoundException(".pt file not found in: " + modelPath);
+            Path modelFile = findModelFile(prefix);
+            if (modelFile == null) {
+                modelFile = findModelFile(modelDir.toFile().getName());
+                if (modelFile == null) {
+                    throw new FileNotFoundException(".pt file not found in: " + modelDir);
+                }
             }
             block = JniUtils.loadModule((PtNDManager) manager, modelFile, manager.getDevice());
         } else {
-            readParameters(options);
+            Path paramFile = paramPathResolver(prefix, options);
+            if (paramFile == null) {
+                throw new IOException(
+                        "Parameter file not found in: "
+                                + modelDir
+                                + ". If you only specified model path, make sure path name match"
+                                + "your saved model file name.");
+            }
+            readParameters(paramFile, options);
         }
+    }
+
+    private Path findModelFile(String prefix) {
+        Path modelFile = modelDir.resolve(prefix);
+        if (Files.notExists(modelFile) || !Files.isRegularFile(modelFile)) {
+            if (prefix.endsWith(".pt")) {
+                return null;
+            }
+            modelFile = modelDir.resolve(prefix + ".pt");
+            if (Files.notExists(modelFile) || !Files.isRegularFile(modelFile)) {
+                return null;
+            }
+        }
+        return modelFile;
     }
 
     /** {@inheritDoc} */
     @Override
     public Trainer newTrainer(TrainingConfig trainingConfig) {
-        throw new UnsupportedOperationException("Not implemented");
+        Initializer initializer = trainingConfig.getInitializer();
+        if (block == null) {
+            throw new IllegalStateException(
+                    "You must set a block for the model before creating a new trainer");
+        }
+        block.setInitializer(initializer);
+
+        return new Trainer(this, trainingConfig);
     }
 
     /** {@inheritDoc} */

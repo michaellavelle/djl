@@ -62,7 +62,9 @@ public class LoggingTrainingListener implements TrainingListener {
                                 trainer.getEvaluators(),
                                 EvaluatorTrainingListener.VALIDATE_EPOCH,
                                 Short.MAX_VALUE);
-                logger.info("Validate: {}", status);
+                if (!status.isEmpty()) {
+                    logger.info("Validate: {}", status);
+                }
             } else {
                 logger.info("validation has not been run.");
             }
@@ -118,11 +120,11 @@ public class LoggingTrainingListener implements TrainingListener {
     @Override
     public void onTrainingBegin(Trainer trainer) {
         String devicesMsg;
-        List<Device> devices = trainer.getDevices();
-        if (devices.size() == 1 && Device.Type.CPU.equals(devices.get(0).getDeviceType())) {
+        Device[] devices = trainer.getDevices();
+        if (devices.length == 1 && Device.Type.CPU.equals(devices[0].getDeviceType())) {
             devicesMsg = Device.cpu().toString();
         } else {
-            devicesMsg = devices.size() + " GPUs";
+            devicesMsg = devices.length + " GPUs";
         }
         logger.info("Training on: {}.", devicesMsg);
 
@@ -140,37 +142,48 @@ public class LoggingTrainingListener implements TrainingListener {
     @Override
     public void onTrainingEnd(Trainer trainer) {
         Metrics metrics = trainer.getMetrics();
-
         if (metrics == null) {
             return;
         }
 
+        float p50;
+        float p90;
         if (metrics.hasMetric("train")) {
             // possible no train metrics if only one iteration is executed
-            float p50 = metrics.percentile("train", 50).getValue().longValue() / 1_000_000f;
-            float p90 = metrics.percentile("train", 90).getValue().longValue() / 1_000_000f;
+            p50 = metrics.percentile("train", 50).getValue().longValue() / 1_000_000f;
+            p90 = metrics.percentile("train", 90).getValue().longValue() / 1_000_000f;
             logger.info(String.format("train P50: %.3f ms, P90: %.3f ms", p50, p90));
         }
 
-        float p50 = metrics.percentile("forward", 50).getValue().longValue() / 1_000_000f;
-        float p90 = metrics.percentile("forward", 90).getValue().longValue() / 1_000_000f;
-        logger.info(String.format("forward P50: %.3f ms, P90: %.3f ms", p50, p90));
+        if (metrics.hasMetric("forward")) {
+            p50 = metrics.percentile("forward", 50).getValue().longValue() / 1_000_000f;
+            p90 = metrics.percentile("forward", 90).getValue().longValue() / 1_000_000f;
+            logger.info(String.format("forward P50: %.3f ms, P90: %.3f ms", p50, p90));
+        }
 
-        p50 = metrics.percentile("training-metrics", 50).getValue().longValue() / 1_000_000f;
-        p90 = metrics.percentile("training-metrics", 90).getValue().longValue() / 1_000_000f;
-        logger.info(String.format("training-metrics P50: %.3f ms, P90: %.3f ms", p50, p90));
+        if (metrics.hasMetric("training-metrics")) {
+            p50 = metrics.percentile("training-metrics", 50).getValue().longValue() / 1_000_000f;
+            p90 = metrics.percentile("training-metrics", 90).getValue().longValue() / 1_000_000f;
+            logger.info(String.format("training-metrics P50: %.3f ms, P90: %.3f ms", p50, p90));
+        }
 
-        p50 = metrics.percentile("backward", 50).getValue().longValue() / 1_000_000f;
-        p90 = metrics.percentile("backward", 90).getValue().longValue() / 1_000_000f;
-        logger.info(String.format("backward P50: %.3f ms, P90: %.3f ms", p50, p90));
+        if (metrics.hasMetric("backward")) {
+            p50 = metrics.percentile("backward", 50).getValue().longValue() / 1_000_000f;
+            p90 = metrics.percentile("backward", 90).getValue().longValue() / 1_000_000f;
+            logger.info(String.format("backward P50: %.3f ms, P90: %.3f ms", p50, p90));
+        }
 
-        p50 = metrics.percentile("step", 50).getValue().longValue() / 1_000_000f;
-        p90 = metrics.percentile("step", 90).getValue().longValue() / 1_000_000f;
-        logger.info(String.format("step P50: %.3f ms, P90: %.3f ms", p50, p90));
+        if (metrics.hasMetric("step")) {
+            p50 = metrics.percentile("step", 50).getValue().longValue() / 1_000_000f;
+            p90 = metrics.percentile("step", 90).getValue().longValue() / 1_000_000f;
+            logger.info(String.format("step P50: %.3f ms, P90: %.3f ms", p50, p90));
+        }
 
-        p50 = metrics.percentile("epoch", 50).getValue().longValue() / 1_000_000_000f;
-        p90 = metrics.percentile("epoch", 90).getValue().longValue() / 1_000_000_000f;
-        logger.info(String.format("epoch P50: %.3f s, P90: %.3f s", p50, p90));
+        if (metrics.hasMetric("epoch")) {
+            p50 = metrics.percentile("epoch", 50).getValue().longValue() / 1_000_000_000f;
+            p90 = metrics.percentile("epoch", 90).getValue().longValue() / 1_000_000_000f;
+            logger.info(String.format("epoch P50: %.3f s, P90: %.3f s", p50, p90));
+        }
     }
 
     private String getEvaluatorsStatus(
@@ -186,7 +199,15 @@ public class LoggingTrainingListener implements TrainingListener {
             if (metrics.hasMetric(metricName)) {
                 float value = metrics.latestMetric(metricName).getValue().floatValue();
                 // use .2 precision to avoid new line in progress bar
-                metricOutputs.add(String.format("%s: %.2f", evaluator.getName(), value));
+                String output;
+                if (Math.abs(value) < .01 || Math.abs(value) > 9999) {
+                    output = String.format("%s: %.2E", evaluator.getName(), value);
+                } else if (metricName.startsWith("validate_") && Float.isNaN(value)) {
+                    continue;
+                } else {
+                    output = String.format("%s: %.2f", evaluator.getName(), value);
+                }
+                metricOutputs.add(output);
             } else {
                 metricOutputs.add(String.format("%s: _", evaluator.getName()));
             }

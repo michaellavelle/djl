@@ -19,8 +19,8 @@ import ai.djl.training.Trainer;
 import ai.djl.training.TrainingConfig;
 import ai.djl.training.dataset.Batch;
 import ai.djl.training.dataset.Dataset.Usage;
-import ai.djl.training.initializer.Initializer;
 import ai.djl.training.loss.Loss;
+import ai.djl.translate.TranslateException;
 import java.io.IOException;
 import org.testng.Assert;
 import org.testng.annotations.Test;
@@ -29,7 +29,7 @@ public class ImageNetTest {
 
     // ImageNet requires running manual download so can't be automatically tested
     @Test(enabled = false)
-    public void testImageNetLocal() throws IOException {
+    public void testImageNetLocal() throws IOException, TranslateException {
         Repository repository =
                 Repository.newInstance(
                         "test", System.getProperty("user.home") + "/Desktop/testImagenet");
@@ -39,12 +39,10 @@ public class ImageNetTest {
                         .setRepository(repository)
                         .setSampling(32, true)
                         .build();
-        imagenet.prepare();
 
-        try (Model model = Model.newInstance()) {
-            TrainingConfig config =
-                    new DefaultTrainingConfig(Loss.softmaxCrossEntropyLoss())
-                            .optInitializer(Initializer.ONES);
+        try (Model model = Model.newInstance("model")) {
+            TrainingConfig config = new DefaultTrainingConfig(Loss.softmaxCrossEntropyLoss());
+
             try (Trainer trainer = model.newTrainer(config)) {
                 for (Batch batch : trainer.iterateDataset(imagenet)) {
                     Assert.assertEquals(batch.getData().size(), 1);

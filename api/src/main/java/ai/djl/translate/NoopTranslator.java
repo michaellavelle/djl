@@ -17,6 +17,26 @@ import ai.djl.ndarray.NDList;
 /** A no operational {@link Translator} implementation. */
 public class NoopTranslator implements Translator<NDList, NDList> {
 
+    private Batchifier batchifier;
+
+    /**
+     * Constructs a {@link NoopTranslator} with the given {@link Batchifier}.
+     *
+     * @param batchifier batchifier to use
+     */
+    public NoopTranslator(Batchifier batchifier) {
+        this.batchifier = batchifier;
+    }
+
+    /**
+     * Constructs a {@link NoopTranslator}.
+     *
+     * <p>Uses the {@link Batchifier#STACK} as default.
+     */
+    public NoopTranslator() {
+        this(Batchifier.STACK);
+    }
+
     /** {@inheritDoc} */
     @Override
     public NDList processInput(TranslatorContext ctx, NDList input) {
@@ -32,6 +52,15 @@ public class NoopTranslator implements Translator<NDList, NDList> {
     /** {@inheritDoc} */
     @Override
     public Batchifier getBatchifier() {
-        return null;
+        return batchifier;
+    }
+
+    /**
+     * Sets the {@link Batchifier} for the Translator.
+     *
+     * @param batchifier the {@link Batchifier} for the Translator
+     */
+    public void setBatchifier(Batchifier batchifier) {
+        this.batchifier = batchifier;
     }
 }

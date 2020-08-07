@@ -4,7 +4,7 @@ Action recognition is a computer vision technique to infer human actions (presen
 
 In this example, you learn how to implement inference code with a [ModelZoo model](../../docs/model-zoo.md) to detect dogs in an image.
 
-The source code can be found at [ActionRecognition.java](../src/main/java/ai/djl/examples/inference/ActionRecognition.java).
+The source code can be found at [ActionRecognition.java](https://github.com/awslabs/djl/blob/master/examples/src/main/java/ai/djl/examples/inference/ActionRecognition.java).
 
 ## Setup Guide
 
@@ -19,12 +19,14 @@ You can find the image used in this example in the project test resource folder:
 
 ### Build the project and run
 Use the following command to run the project:
+
 ```
 cd examples
 ./gradlew run -Dmain=ai.djl.examples.inference.ActionRecognition
 ```
 
 Your output should look like the following:
+
 ```text
 [INFO ] - [
         class: "ThrowDiscus", probability: 0.99868

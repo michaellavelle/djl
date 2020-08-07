@@ -1,17 +1,21 @@
-# DJL - MXNet model zoo
+# DJL - Apache MXNet model zoo
 
 ## Introduction
 
-The MXNet model zoo contains symbolic models that can be used for inference and training. All the models in this model zoo contain pre-trained parameters for their specific datasets.
+The model zoo contains symbolic models from Apache MXNet (incubating) that can be used for inference and training. All the models in this model zoo contain pre-trained parameters for their specific datasets.
 
 ## Documentation
 
-The latest javadocs can be found on the [djl.ai website](https://javadoc.djl.ai/mxnet-model-zoo/0.4.0/index.html).
+The latest javadocs can be found on the [djl.ai website](https://javadoc.io/doc/ai.djl.mxnet/mxnet-model-zoo/latest/index.html).
 
 You can also build the latest javadocs locally using the following command:
 
 ```sh
+# for Linux/macOS:
 ./gradlew javadoc
+
+# for Windows:
+..\..\gradlew javadoc
 ```
 The javadocs output is built in the build/doc/javadoc folder.
 
@@ -23,13 +27,14 @@ You can pull the MXNet engine from the central Maven repository by including the
 <dependency>
     <groupId>ai.djl.mxnet</groupId>
     <artifactId>mxnet-model-zoo</artifactId>
-    <version>0.4.0</version>
+    <version>0.6.0</version>
 </dependency>
 ```
 
 ## Pre-trained models
 
-The MXNet model zoo contains two major categories: Computer Vision (CV) and Natural Language Processing (NLP). All the models are grouped by task under these two categories as follows:
+The MXNet model zoo contains two major categories: Computer Vision (CV) and Natural Language Processing (NLP). 
+All the models are grouped by task under these two categories as follows:
 
 
 * CV
@@ -50,13 +55,14 @@ to narrow down the model you want. If there are multiple models that match your 
 model found is returned. *ModelNotFoundException* will be thrown if no matching model is found.
 
 The following is an example of the criteria to find a Resnet50-v1 model that has been trained on the imagenet dataset:
+
 ```java
     Map<String, String> criteria = new HashMap<>();
     criteria.put("layers", "50");
     criteria.put("flavor", "v1");
     criteria.put("dataset", "imagenet");
 
-    ZooModel<BufferedImage, Classification> model = MxModelZoo.RESNET.loadModel(criteria, device);
+    ZooModel<Image, Classification> model = MxModelZoo.RESNET.loadModel(criteria, device);
 ``` 
 
 ### List of search criteria for each model
@@ -99,4 +105,4 @@ in the `src/test/resources/mlrepo/model` folder.
 
 ## Contributor Guides and Documentation
 
-### [How to add new models to the MXNet model zoo](../../docs/development/add_model_to_mxnet-model-zoo.md)
+### [How to add new models to the model zoo](../../docs/development/add_model_to_model-zoo.md)

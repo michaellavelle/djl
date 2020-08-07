@@ -12,11 +12,11 @@
  */
 package ai.djl.integration.tests.nn;
 
-import ai.djl.Device;
 import ai.djl.MalformedModelException;
 import ai.djl.Model;
 import ai.djl.engine.Engine;
 import ai.djl.integration.util.TestUtils;
+import ai.djl.modality.nlp.SimpleVocabulary;
 import ai.djl.modality.nlp.embedding.TrainableWordEmbedding;
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
@@ -29,9 +29,9 @@ import ai.djl.nn.LambdaBlock;
 import ai.djl.nn.ParallelBlock;
 import ai.djl.nn.Parameter;
 import ai.djl.nn.SequentialBlock;
-import ai.djl.nn.convolutional.Conv1D;
-import ai.djl.nn.convolutional.Conv2D;
-import ai.djl.nn.convolutional.Conv3D;
+import ai.djl.nn.convolutional.Conv1d;
+import ai.djl.nn.convolutional.Conv2d;
+import ai.djl.nn.convolutional.Conv3d;
 import ai.djl.nn.core.Linear;
 import ai.djl.nn.norm.BatchNorm;
 import ai.djl.nn.norm.Dropout;
@@ -40,6 +40,7 @@ import ai.djl.nn.recurrent.LSTM;
 import ai.djl.nn.recurrent.RNN;
 import ai.djl.testing.Assertions;
 import ai.djl.training.DefaultTrainingConfig;
+import ai.djl.training.GradientCollector;
 import ai.djl.training.Trainer;
 import ai.djl.training.TrainingConfig;
 import ai.djl.training.initializer.Initializer;
@@ -63,8 +64,8 @@ public class BlockCoreTest {
                 new DefaultTrainingConfig(Loss.l2Loss()).optInitializer(Initializer.ONES);
 
         long outSize = 3;
-        Block block = Linear.builder().setOutChannels(outSize).build();
-        try (Model model = Model.newInstance()) {
+        Block block = Linear.builder().setUnits(outSize).build();
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(block);
 
             try (Trainer trainer = model.newTrainer(config)) {
@@ -83,8 +84,8 @@ public class BlockCoreTest {
             }
         }
 
-        block = Linear.builder().setOutChannels(outSize).optBias(false).build();
-        try (Model model = Model.newInstance()) {
+        block = Linear.builder().setUnits(outSize).optBias(false).build();
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(block);
 
             try (Trainer trainer = model.newTrainer(config)) {
@@ -100,16 +101,10 @@ public class BlockCoreTest {
                 testEncode(manager, block);
             }
         }
-    }
 
-    @Test
-    public void testLinearWithFlatten() throws IOException, MalformedModelException {
-        TrainingConfig config =
-                new DefaultTrainingConfig(Loss.l2Loss()).optInitializer(Initializer.ONES);
-
-        long outSize = 10;
-        Block block = Linear.builder().setOutChannels(outSize).optFlatten(false).build();
-        try (Model model = Model.newInstance()) {
+        outSize = 10;
+        block = Linear.builder().setUnits(outSize).build();
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(block);
 
             try (Trainer trainer = model.newTrainer(config)) {
@@ -131,8 +126,8 @@ public class BlockCoreTest {
                 new DefaultTrainingConfig(Loss.l2Loss()).optInitializer(Initializer.ONES);
 
         long outSize = 3;
-        Block block = Linear.builder().setOutChannels(outSize).build();
-        try (Model model = Model.newInstance()) {
+        Block block = Linear.builder().setUnits(outSize).build();
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(block);
 
             try (Trainer trainer = model.newTrainer(config)) {
@@ -154,8 +149,8 @@ public class BlockCoreTest {
             }
         }
 
-        block = Linear.builder().setOutChannels(outSize).optBias(false).build();
-        try (Model model = Model.newInstance()) {
+        block = Linear.builder().setUnits(outSize).optBias(false).build();
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(block);
 
             try (Trainer trainer = model.newTrainer(config)) {
@@ -176,49 +171,56 @@ public class BlockCoreTest {
         }
     }
 
+    @SuppressWarnings("try")
     @Test
     public void testBatchNorm() throws IOException, MalformedModelException {
         TrainingConfig config =
                 new DefaultTrainingConfig(Loss.l2Loss()).optInitializer(Initializer.ONES);
 
-        Block block = BatchNorm.builder().optAxis(1).build();
-        try (Model model = Model.newInstance()) {
+        Block block = BatchNorm.builder().build();
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(block);
 
             try (Trainer trainer = model.newTrainer(config)) {
-                Shape inputShape = new Shape(2, 2);
-                trainer.initialize(inputShape);
+                // the unused GradientCollector is for BatchNorm to know it is on training mode
+                try (GradientCollector collector = trainer.newGradientCollector()) {
+                    Shape inputShape = new Shape(2, 2);
+                    trainer.initialize(inputShape);
 
-                NDManager manager = trainer.getManager();
-                NDArray data = manager.create(new float[] {1, 2, 3, 4}, inputShape);
-                NDArray expected = manager.create(new float[] {1, 2, 3, 4}, inputShape);
-                NDArray result = trainer.forward(new NDList(data)).singletonOrThrow();
-                Assertions.assertAlmostEquals(result, expected);
-
-                testEncode(manager, block);
+                    NDManager manager = trainer.getManager();
+                    NDArray data = manager.create(new float[] {1, 2, 3, 4}, inputShape);
+                    NDArray expected = manager.create(new float[] {-1, -1, 1, 1}, inputShape);
+                    NDArray result = trainer.forward(new NDList(data)).singletonOrThrow();
+                    Assertions.assertAlmostEquals(result, expected);
+                    testEncode(manager, block);
+                }
             }
         }
     }
 
+    @SuppressWarnings("try")
     @Test
     public void testDropout() throws IOException, MalformedModelException {
         TrainingConfig config =
                 new DefaultTrainingConfig(Loss.l2Loss()).optInitializer(Initializer.ONES);
 
-        Block block = Dropout.builder().optProbability(.5f).build();
-        try (Model model = Model.newInstance()) {
+        Block block = Dropout.builder().optRate(.5f).build();
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(block);
 
             try (Trainer trainer = model.newTrainer(config)) {
-                Shape inputShape = new Shape(2, 2);
-                trainer.initialize(inputShape);
+                // the unused GradientCollector is for Dropout to know it is on training mode
+                try (GradientCollector collector = trainer.newGradientCollector()) {
+                    Shape inputShape = new Shape(2, 2);
+                    trainer.initialize(inputShape);
 
-                NDManager manager = trainer.getManager();
-                NDArray data = manager.create(new float[] {1, 2, 3, 4}, inputShape);
-                NDArray result = trainer.forward(new NDList(data)).singletonOrThrow();
-                Assert.assertTrue(result.lte(result).all().getBoolean());
+                    NDManager manager = trainer.getManager();
+                    NDArray data = manager.create(new float[] {1, 2, 3, 4}, inputShape);
+                    NDArray result = trainer.forward(new NDList(data)).singletonOrThrow();
+                    Assert.assertTrue(result.lte(result).all().getBoolean());
 
-                testEncode(manager, block);
+                    testEncode(manager, block);
+                }
             }
         }
     }
@@ -230,10 +232,10 @@ public class BlockCoreTest {
 
         TrainableWordEmbedding block =
                 TrainableWordEmbedding.builder()
-                        .setItems(Arrays.asList("a", "b", "c"))
+                        .setVocabulary(new SimpleVocabulary(Arrays.asList("a", "b", "c")))
                         .setEmbeddingSize(2)
                         .build();
-        try (Model model = Model.newInstance()) {
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(block);
             model.setDataType(DataType.INT32);
 
@@ -244,7 +246,8 @@ public class BlockCoreTest {
                 NDManager manager = trainer.getManager();
 
                 Assert.assertEquals(
-                        trainer.forward(new NDList(block.embed(manager, "x"))).singletonOrThrow(),
+                        trainer.forward(new NDList(manager.create(block.embed("x"))))
+                                .singletonOrThrow(),
                         manager.create(new int[] {1, 1}));
 
                 Assert.assertEquals(
@@ -257,14 +260,14 @@ public class BlockCoreTest {
     }
 
     @Test
-    public void testConv1D() throws IOException, MalformedModelException {
+    public void testConv1d() throws IOException, MalformedModelException {
         TrainingConfig config =
                 new DefaultTrainingConfig(Loss.l2Loss()).optInitializer(Initializer.ONES);
 
         Block block =
-                Conv1D.builder().setKernel(new Shape(2)).setNumFilters(1).optBias(false).build();
+                Conv1d.builder().setKernelShape(new Shape(2)).setFilters(1).optBias(false).build();
 
-        try (Model model = Model.newInstance()) {
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(block);
 
             try (Trainer trainer = model.newTrainer(config)) {
@@ -289,12 +292,12 @@ public class BlockCoreTest {
     }
 
     @Test
-    public void testConv2D() throws IOException, MalformedModelException {
+    public void testConv2d() throws IOException, MalformedModelException {
         TrainingConfig config =
                 new DefaultTrainingConfig(Loss.l2Loss()).optInitializer(Initializer.ONES);
 
-        Block block = Conv2D.builder().setKernel(new Shape(2, 2)).setNumFilters(1).build();
-        try (Model model = Model.newInstance()) {
+        Block block = Conv2d.builder().setKernelShape(new Shape(2, 2)).setFilters(1).build();
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(block);
 
             try (Trainer trainer = model.newTrainer(config)) {
@@ -320,12 +323,12 @@ public class BlockCoreTest {
     }
 
     @Test
-    public void testConv3D() throws IOException, MalformedModelException {
+    public void testConv3d() throws IOException, MalformedModelException {
         TrainingConfig config =
                 new DefaultTrainingConfig(Loss.l2Loss()).optInitializer(Initializer.ONES);
 
-        Block block = Conv3D.builder().setKernel(new Shape(2, 2, 2)).setNumFilters(1).build();
-        try (Model model = Model.newInstance()) {
+        Block block = Conv3d.builder().setKernelShape(new Shape(2, 2, 2)).setFilters(1).build();
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(block);
 
             try (Trainer trainer = model.newTrainer(config)) {
@@ -363,7 +366,7 @@ public class BlockCoreTest {
         TrainingConfig config =
                 new DefaultTrainingConfig(loss)
                         .optInitializer(Initializer.ONES)
-                        .optDevices(getDevices());
+                        .optDevices(TestUtils.getDevices());
         Block block =
                 RNN.builder()
                         .setStateSize(4)
@@ -371,7 +374,7 @@ public class BlockCoreTest {
                         .setActivation(RNN.Activation.TANH)
                         .optStateOutput(true)
                         .build();
-        try (Model model = Model.newInstance(config.getDevices()[0])) {
+        try (Model model = Model.newInstance("model", config.getDevices()[0])) {
             model.setBlock(block);
 
             try (Trainer trainer = model.newTrainer(config)) {
@@ -401,7 +404,7 @@ public class BlockCoreTest {
         TrainingConfig config =
                 new DefaultTrainingConfig(loss)
                         .optInitializer(Initializer.ONES)
-                        .optDevices(getDevices());
+                        .optDevices(TestUtils.getDevices());
         Block block =
                 RNN.builder()
                         .setStateSize(4)
@@ -409,7 +412,7 @@ public class BlockCoreTest {
                         .setActivation(RNN.Activation.RELU)
                         .optStateOutput(true)
                         .build();
-        try (Model model = Model.newInstance(config.getDevices()[0])) {
+        try (Model model = Model.newInstance("model", config.getDevices()[0])) {
             model.setBlock(block);
 
             try (Trainer trainer = model.newTrainer(config)) {
@@ -440,10 +443,10 @@ public class BlockCoreTest {
         TrainingConfig config =
                 new DefaultTrainingConfig(loss)
                         .optInitializer(Initializer.ONES)
-                        .optDevices(getDevices());
+                        .optDevices(TestUtils.getDevices());
         Block block =
                 LSTM.builder().setStateSize(4).setNumStackedLayers(1).optStateOutput(true).build();
-        try (Model model = Model.newInstance(config.getDevices()[0])) {
+        try (Model model = Model.newInstance("model", config.getDevices()[0])) {
             model.setBlock(block);
 
             try (Trainer trainer = model.newTrainer(config)) {
@@ -464,7 +467,7 @@ public class BlockCoreTest {
                                 },
                                 new Shape(1, 2, 4));
                 Assertions.assertAlmostEquals(result.head(), expected);
-                Assertions.assertAlmostEquals(result.size(), 2);
+                Assertions.assertAlmostEquals(result.size(), 3);
                 NDArray lossValue = loss.evaluate(new NDList(labels), new NDList(result.head()));
                 Assertions.assertAlmostEquals(lossValue.getFloat(), -16.340019);
                 testEncode(manager, block);
@@ -479,9 +482,9 @@ public class BlockCoreTest {
         TrainingConfig config =
                 new DefaultTrainingConfig(loss)
                         .optInitializer(Initializer.ONES)
-                        .optDevices(getDevices());
+                        .optDevices(TestUtils.getDevices());
         GRU block = GRU.builder().setStateSize(4).setNumStackedLayers(1).build();
-        try (Model model = Model.newInstance(config.getDevices()[0])) {
+        try (Model model = Model.newInstance("model", config.getDevices()[0])) {
             model.setBlock(block);
 
             try (Trainer trainer = model.newTrainer(config)) {
@@ -521,9 +524,9 @@ public class BlockCoreTest {
         TrainingConfig config =
                 new DefaultTrainingConfig(Loss.l2Loss()).optInitializer(Initializer.ONES);
         SequentialBlock block = new SequentialBlock();
-        block.add(x -> new NDList(x.singletonOrThrow().mul(6.5f)));
-        block.add(Linear.builder().setOutChannels(10).build());
-        block.add(Linear.builder().setOutChannels(5).build());
+        block.addSingleton(x -> x.mul(6.5f));
+        block.add(Linear.builder().setUnits(10).build());
+        block.add(Linear.builder().setUnits(5).build());
 
         Assert.assertEquals(block.getChildren().size(), 3);
         Assert.assertEquals(block.getDirectParameters().size(), 0);
@@ -531,15 +534,15 @@ public class BlockCoreTest {
 
         block.addAll(
                 Arrays.asList(
-                        Linear.builder().setOutChannels(3).build(),
-                        new LambdaBlock(x -> new NDList(x.singletonOrThrow().div(2f)))));
+                        Linear.builder().setUnits(3).build(),
+                        LambdaBlock.singleton(x -> x.div(2f))));
         Assert.assertEquals(block.getChildren().size(), 5);
         Assert.assertEquals(block.getParameters().size(), 6);
 
         block.removeLastBlock();
         Assert.assertEquals(block.getChildren().size(), 4);
 
-        try (Model model = Model.newInstance()) {
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(block);
 
             try (Trainer trainer = model.newTrainer(config)) {
@@ -567,15 +570,15 @@ public class BlockCoreTest {
                                         list.get(0).singletonOrThrow(),
                                         list.get(1).singletonOrThrow(),
                                         list.get(2).singletonOrThrow()));
-        block.add(Linear.builder().setOutChannels(3).build());
+        block.add(Linear.builder().setUnits(3).build());
         block.add(x -> new NDList(x.singletonOrThrow().sum()));
-        block.add(Linear.builder().setOutChannels(2).build());
+        block.add(Linear.builder().setUnits(2).build());
 
         Assert.assertEquals(block.getChildren().size(), 3);
         Assert.assertEquals(block.getDirectParameters().size(), 0);
         Assert.assertEquals(block.getParameters().size(), 4);
 
-        try (Model model = Model.newInstance()) {
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(block);
 
             try (Trainer trainer = model.newTrainer(config)) {
@@ -608,14 +611,5 @@ public class BlockCoreTest {
         for (int idx = 0; idx < bound; idx++) {
             Assert.assertEquals(original.valueAt(idx), loaded.valueAt(idx));
         }
-    }
-
-    private static Device[] getDevices() {
-        if (TestUtils.isWindows() && TestUtils.isMxnet()) {
-            return new Device[] {
-                Device.cpu()
-            }; // TODO: RNN is not implemented on MXNet without cuDNN
-        }
-        return Device.getDevices(1);
     }
 }

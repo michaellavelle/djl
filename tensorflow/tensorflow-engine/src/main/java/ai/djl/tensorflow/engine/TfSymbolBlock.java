@@ -18,7 +18,6 @@ import ai.djl.ndarray.NDManager;
 import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.BlockList;
-import ai.djl.nn.Parameter;
 import ai.djl.nn.ParameterList;
 import ai.djl.nn.SymbolBlock;
 import ai.djl.training.ParameterStore;
@@ -38,16 +37,12 @@ import org.tensorflow.proto.framework.TensorShapeProto;
 
 public class TfSymbolBlock implements SymbolBlock {
 
-    private NDManager manager;
     private SavedModelBundle bundle;
-    // private Graph graph;
     private MetaGraphDef metaGraphDef;
     private Session session;
 
-    public TfSymbolBlock(NDManager manager, SavedModelBundle bundle) {
-        this.manager = manager;
+    public TfSymbolBlock(SavedModelBundle bundle) {
         this.bundle = bundle;
-        // graph = bundle.graph();
         session = bundle.session();
         metaGraphDef = bundle.metaGraphDef();
     }
@@ -61,7 +56,10 @@ public class TfSymbolBlock implements SymbolBlock {
     /** {@inheritDoc} */
     @Override
     public NDList forward(
-            ParameterStore parameterStore, NDList inputs, PairList<String, Object> params) {
+            ParameterStore parameterStore,
+            NDList inputs,
+            boolean training,
+            PairList<String, Object> params) {
         Session.Runner runner = session.runner();
         PairList<String, Shape> inputDescriptions = describeInput();
         PairList<String, Shape> outputDescriptions = describeOutput();
@@ -75,8 +73,10 @@ public class TfSymbolBlock implements SymbolBlock {
         List<Tensor<?>> result = runner.run();
 
         NDList resultNDList = new NDList();
+        TfNDManager tfNDManager = (TfNDManager) inputs.head().getManager();
         for (Tensor<?> tensor : result) {
-            resultNDList.add(((TfNDManager) manager).create(tensor));
+            resultNDList.add(tfNDManager.create(tensor));
+            tensor.close();
         }
         return resultNDList;
     }
@@ -114,7 +114,12 @@ public class TfSymbolBlock implements SymbolBlock {
     /** {@inheritDoc} */
     @Override
     public void clear() {
-        bundle.close();
+        if (session != null) {
+            session.close();
+        }
+        if (bundle != null) {
+            bundle.close();
+        }
     }
 
     /** {@inheritDoc} */
@@ -122,10 +127,7 @@ public class TfSymbolBlock implements SymbolBlock {
     public PairList<String, Shape> describeInput() {
         PairList<String, Shape> inputDescriptions = new PairList<>();
         Map<String, SignatureDef> signatureDefMap = metaGraphDef.getSignatureDefMap();
-        SignatureDef servingDefault =
-                metaGraphDef.getSignatureDefOrDefault(
-                        "serving_default",
-                        signatureDefMap.get(signatureDefMap.keySet().iterator().next()));
+        SignatureDef servingDefault = signatureDefMap.entrySet().iterator().next().getValue();
         for (Map.Entry<String, TensorInfo> entry : servingDefault.getInputsMap().entrySet()) {
             TensorShapeProto shapeProto = entry.getValue().getTensorShape();
             inputDescriptions.add(
@@ -143,12 +145,13 @@ public class TfSymbolBlock implements SymbolBlock {
     PairList<String, Shape> describeOutput() {
         PairList<String, Shape> outputDescription = new PairList<>();
         Map<String, SignatureDef> signatureDefMap = metaGraphDef.getSignatureDefMap();
-        SignatureDef servingDefault =
-                metaGraphDef.getSignatureDefOrDefault(
-                        "serving_default",
-                        signatureDefMap.get(signatureDefMap.keySet().iterator().next()));
+        SignatureDef servingDefault = signatureDefMap.entrySet().iterator().next().getValue();
         for (Map.Entry<String, TensorInfo> entry : servingDefault.getOutputsMap().entrySet()) {
             TensorShapeProto shapeProto = entry.getValue().getTensorShape();
+            // does not support string tensors
+            if (entry.getValue().getDtype() == org.tensorflow.proto.framework.DataType.DT_STRING) {
+                continue;
+            }
             outputDescription.add(
                     entry.getValue().getName(),
                     new Shape(
@@ -169,7 +172,7 @@ public class TfSymbolBlock implements SymbolBlock {
 
     /** {@inheritDoc} */
     @Override
-    public List<Parameter> getDirectParameters() {
+    public ParameterList getDirectParameters() {
         throw new UnsupportedOperationException("Not supported for TensorFlow Engine");
     }
 

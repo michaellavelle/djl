@@ -13,6 +13,7 @@ dependencies {
     testImplementation("org.testng:testng:${testng_version}") {
         exclude group: "junit", module: "junit"
     }
+    testRuntimeOnly project(":tensorflow:tensorflow-native-auto")
     testImplementation "org.slf4j:slf4j-simple:${slf4j_version}"
 }
 
@@ -29,8 +30,8 @@ publishing {
     publications {
         maven(MavenPublication) {
             pom {
-                name = "TensorFlow model zoo"
-                description = "TensorFlow model zoo for DJL"
+                name = "DJL model zoo for TensorFlow"
+                description = "DJL model zoo for TensorFlow"
                 url = "http://www.djl.ai/tensorflow/${project.name}"
             }
         }

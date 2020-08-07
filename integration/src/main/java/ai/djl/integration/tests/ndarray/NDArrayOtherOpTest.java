@@ -12,11 +12,12 @@
  */
 package ai.djl.integration.tests.ndarray;
 
+import ai.djl.engine.EngineException;
+import ai.djl.ndarray.LazyNDArray;
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDArrays;
 import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.NDManager;
-import ai.djl.ndarray.index.NDIndex;
 import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.testing.Assertions;
@@ -24,75 +25,6 @@ import org.testng.Assert;
 import org.testng.annotations.Test;
 
 public class NDArrayOtherOpTest {
-
-    @Test
-    public void testGet() {
-        try (NDManager manager = NDManager.newBaseManager()) {
-            NDArray original = manager.create(new float[] {1f, 2f, 3f, 4f}, new Shape(2, 2));
-            Assert.assertEquals(original.get(new NDIndex()), original);
-
-            NDArray getAt = original.get(0);
-            NDArray expected = manager.create(new float[] {1f, 2f});
-            Assert.assertEquals(getAt, expected);
-
-            Assert.assertEquals(original.get("0,:"), expected);
-            Assert.assertEquals(original.get("0,*"), expected);
-
-            NDArray getSlice = original.get("1:");
-            expected = manager.create(new float[] {3f, 4f}, new Shape(1, 2));
-            Assert.assertEquals(getSlice, expected);
-
-            NDArray getStepSlice = original.get("1::2");
-            Assert.assertEquals(getStepSlice, expected);
-
-            // get from boolean array
-            original = manager.arange(10).reshape(2, 5);
-            NDArray bool = manager.create(new boolean[] {true, false});
-            expected = manager.arange(5).reshape(1, 5);
-            Assert.assertEquals(original.get(bool), expected);
-        }
-    }
-
-    @Test
-    public void testSetArray() {
-        try (NDManager manager = NDManager.newBaseManager()) {
-            NDArray original = manager.create(new float[] {1, 2, 3, 4}, new Shape(2, 2));
-            NDArray expected = manager.create(new float[] {9, 10, 3, 4}, new Shape(2, 2));
-            NDArray value = manager.create(new float[] {9, 10});
-            original.set(new NDIndex(0), value);
-            Assert.assertEquals(original, expected);
-        }
-    }
-
-    @Test
-    public void testSetArrayBroadcast() {
-        try (NDManager manager = NDManager.newBaseManager()) {
-            NDArray original = manager.create(new float[] {1, 2, 3, 4}, new Shape(2, 2, 1));
-            NDArray expected = manager.create(new float[] {9, 9, 3, 4}, new Shape(2, 2, 1));
-            NDArray value = manager.create(new float[] {9});
-            original.set(new NDIndex(0), value);
-            Assert.assertEquals(original, expected);
-        }
-    }
-
-    @Test
-    public void testSetNumber() {
-        try (NDManager manager = NDManager.newBaseManager()) {
-            NDArray original = manager.create(new float[] {1, 2, 3, 4}, new Shape(2, 2));
-            NDArray expected = manager.create(new float[] {9, 9, 3, 4}, new Shape(2, 2));
-            original.set(new NDIndex(0), 9);
-            Assert.assertEquals(original, expected);
-        }
-    }
-
-    @Test(expectedExceptions = IllegalArgumentException.class)
-    public void testSetScalar() {
-        try (NDManager manager = NDManager.newBaseManager()) {
-            NDArray original = manager.create(new float[] {1, 2, 3, 4}, new Shape(2, 2));
-            original.setScalar(new NDIndex(0, 0), 0);
-            original.setScalar(new NDIndex(0), 1);
-        }
-    }
 
     @Test
     public void testCopyTo() {
@@ -373,7 +305,7 @@ public class NDArrayOtherOpTest {
         }
     }
 
-    @Test
+    @Test(expectedExceptions = EngineException.class)
     public void testSort() {
         try (NDManager manager = NDManager.newBaseManager()) {
             NDArray array = manager.create(new float[] {2f, 1f, 4f, 3f});
@@ -410,7 +342,7 @@ public class NDArrayOtherOpTest {
                             new float[] {0f, 2f, 4f, 6f, 5f, 7f, 1f, 3f}, new Shape(2, 1, 2, 2));
             Assert.assertEquals(array.sort(3), expected);
 
-            // scalar
+            // scalar throw exception
             array = manager.create(5f);
             Assert.assertEquals(array.sort(), array);
 
@@ -439,6 +371,27 @@ public class NDArrayOtherOpTest {
             Assertions.assertAlmostEquals(array.softmax(2), expected);
             expected = manager.zeros(new Shape(2, 3, 1, 3)).add(0.33333334f);
             Assertions.assertAlmostEquals(array.softmax(3), expected);
+            // test scalar
+            array = manager.create(1f);
+            Assertions.assertAlmostEquals(array.softmax(0), array);
+            // test zero
+            array = manager.create(new Shape(2, 0, 1));
+            Assertions.assertAlmostEquals(array.softmax(0), array);
+        }
+    }
+
+    @Test
+    public void testLogSoftmax() {
+        try (NDManager manager = NDManager.newBaseManager()) {
+            NDArray array = manager.ones(new Shape(10));
+            NDArray expected = manager.zeros(new Shape(10)).add(-2.3025851f);
+            Assertions.assertAlmostEquals(array.logSoftmax(0), expected);
+            // test multi-dim
+            array = manager.ones(new Shape(2, 3, 1, 3));
+            expected = manager.zeros(new Shape(2, 3, 1, 3)).add(-0.6931472f);
+            Assertions.assertAlmostEquals(array.logSoftmax(0), expected);
+            expected = manager.zeros(new Shape(2, 3, 1, 3)).add(-1.0986123f);
+            Assertions.assertAlmostEquals(array.logSoftmax(1), expected);
             // test scalar
             array = manager.create(1f);
             Assertions.assertAlmostEquals(array.softmax(0), array);
@@ -623,6 +576,23 @@ public class NDArrayOtherOpTest {
         }
     }
 
+    @Test
+    public void testFlip() {
+        try (NDManager manager = NDManager.newBaseManager()) {
+            // test single dim
+            NDArray original = manager.create(new float[] {1, 2, 3, 4});
+            NDArray expected = manager.create(new float[] {4, 3, 2, 1});
+            Assert.assertEquals(original.flip(0), expected);
+            // test second dim
+            original = original.reshape(2, 2);
+            expected = manager.create(new float[] {2, 1, 4, 3}, new Shape(2, 2));
+            Assert.assertEquals(original.flip(1), expected);
+            // test two dims
+            expected = manager.create(new float[] {4, 3, 2, 1}, new Shape(2, 2));
+            Assert.assertEquals(original.flip(0, 1), expected);
+        }
+    }
+
     @Test(expectedExceptions = IllegalArgumentException.class)
     public void testTranspose() {
         try (NDManager manager = NDManager.newBaseManager()) {
@@ -678,7 +648,7 @@ public class NDArrayOtherOpTest {
         }
     }
 
-    @Test(expectedExceptions = IllegalArgumentException.class)
+    @Test(expectedExceptions = {IllegalArgumentException.class, EngineException.class})
     public void testArgMax() {
         try (NDManager manager = NDManager.newBaseManager()) {
             NDArray array =
@@ -702,23 +672,21 @@ public class NDArrayOtherOpTest {
 
             // scalar
             array = manager.create(5f);
-            // TODO the dtype should be int instead of float
-            // Bug in MXNet to fix
             expected = manager.create(0L);
             Assert.assertEquals(array.argMax(), expected);
             Assert.assertEquals(array.argMax(0), expected);
 
-            // TODO MXNet engine crash
             // zero-dim
             array = manager.create(new Shape(2, 0, 1));
             expected = manager.create(new Shape(0, 1), DataType.INT64);
             Assert.assertEquals(array.argMax(0), expected);
-            // throw IllegalArgumentException
-            array.argMax();
+            // throw EngineException
+            array = array.argMax();
+            ((LazyNDArray) array).waitToRead();
         }
     }
 
-    @Test(expectedExceptions = IllegalArgumentException.class)
+    @Test(expectedExceptions = {IllegalArgumentException.class, EngineException.class})
     public void testArgMin() {
         try (NDManager manager = NDManager.newBaseManager()) {
             NDArray array =
@@ -750,7 +718,9 @@ public class NDArrayOtherOpTest {
             array = manager.create(new Shape(0, 1, 0));
             expected = manager.create(new Shape(0, 0), DataType.INT64);
             Assert.assertEquals(array.argMin(1), expected, "ArgMin: Incorrect value");
-            array.argMin();
+            // throw EngineException
+            array = array.argMin();
+            ((LazyNDArray) array).waitToRead();
         }
     }
 

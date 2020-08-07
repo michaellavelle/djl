@@ -10,7 +10,7 @@
  * OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
  * and limitations under the License.
  */
-#include "../build/include/ai_djl_pytorch_jni_PyTorchLibrary.h"
+#include "ai_djl_pytorch_jni_PyTorchLibrary.h"
 #include "djl_pytorch_jni_error.h"
 #include "djl_pytorch_jni_utils.h"
 
@@ -21,8 +21,7 @@ JNIEXPORT jobject JNICALL Java_ai_djl_pytorch_jni_PyTorchLibrary_torchReshape(
   API_BEGIN();
   const auto shape_vec = utils::GetVecFromJLongArray(env, jshape);
   const auto* tensor_ptr = utils::GetPointerFromJHandle<const torch::Tensor>(env, jhandle);
-  // clone(copy) explicitly to make memory contiguous
-  const auto* result_ptr = new torch::Tensor(tensor_ptr->reshape(shape_vec).clone());
+  const auto* result_ptr = new torch::Tensor(tensor_ptr->reshape(shape_vec));
   return utils::CreatePointer<torch::Tensor>(env, result_ptr);
   API_END();
 }
@@ -118,10 +117,19 @@ JNIEXPORT jobject JNICALL Java_ai_djl_pytorch_jni_PyTorchLibrary_torchPermute(
   API_BEGIN();
   const auto* tensor_ptr = utils::GetPointerFromJHandle<const torch::Tensor>(env, jhandle);
   const std::vector<int64_t> dims = utils::GetVecFromJLongArray(env, jdims);
-  // clone(copy) explicitly to make memory contiguous
-  const auto* result_ptr = new torch::Tensor(tensor_ptr->permute(dims).clone());
+  const auto* result_ptr = new torch::Tensor(tensor_ptr->permute(dims));
   return utils::CreatePointer<torch::Tensor>(env, result_ptr);
   API_END();
+}
+
+JNIEXPORT jobject JNICALL Java_ai_djl_pytorch_jni_PyTorchLibrary_torchFlip(
+        JNIEnv* env, jobject jthis, jobject jhandle, jlongArray jdims) {
+    API_BEGIN();
+        const auto* tensor_ptr = utils::GetPointerFromJHandle<const torch::Tensor>(env, jhandle);
+        const std::vector<int64_t> dims = utils::GetVecFromJLongArray(env, jdims);
+        const auto* result_ptr = new torch::Tensor(tensor_ptr->flip(dims));
+        return utils::CreatePointer<torch::Tensor>(env, result_ptr);
+    API_END();
 }
 
 JNIEXPORT jobject JNICALL Java_ai_djl_pytorch_jni_PyTorchLibrary_torchTranspose(
@@ -130,5 +138,24 @@ JNIEXPORT jobject JNICALL Java_ai_djl_pytorch_jni_PyTorchLibrary_torchTranspose(
   const auto* tensor_ptr = utils::GetPointerFromJHandle<const torch::Tensor>(env, jhandle);
   const auto* result_ptr = new torch::Tensor(tensor_ptr->transpose(jdim1, jdim2));
   return utils::CreatePointer<torch::Tensor>(env, result_ptr);
+  API_END();
+}
+
+JNIEXPORT jobject JNICALL Java_ai_djl_pytorch_jni_PyTorchLibrary_torchRepeat(
+  JNIEnv* env, jobject jthis, jobject jhandle, jlongArray jrepeats) {
+  API_BEGIN();
+    const auto* tensor_ptr = utils::GetPointerFromJHandle<const torch::Tensor>(env, jhandle);
+    const std::vector<int64_t> repeats = utils::GetVecFromJLongArray(env, jrepeats);
+    const torch::Tensor* result_ptr = new torch::Tensor(tensor_ptr->repeat(repeats));
+    return utils::CreatePointer<const torch::Tensor>(env, result_ptr);
+  API_END();
+}
+
+JNIEXPORT jobject JNICALL Java_ai_djl_pytorch_jni_PyTorchLibrary_torchRepeatInterleave(
+  JNIEnv* env, jobject jthis, jobject jhandle, jlong jrepeats, jlong jdim) {
+  API_BEGIN();
+    const auto* tensor_ptr = utils::GetPointerFromJHandle<const torch::Tensor>(env, jhandle);
+    const torch::Tensor* result_ptr = new torch::Tensor(tensor_ptr->repeat_interleave(jrepeats, jdim));
+    return utils::CreatePointer<const torch::Tensor>(env, result_ptr);
   API_END();
 }

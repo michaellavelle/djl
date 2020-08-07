@@ -2,7 +2,7 @@
 
 In this example, you learn how to train the dataset with multiple inputs and labels.
 
-The source code for this example can be found at [TrainCaptcha.java](../src/main/java/ai/djl/examples/training/TrainCaptcha.java).
+The source code for this example can be found at [TrainCaptcha.java](https://github.com/awslabs/djl/blob/master/examples/src/main/java/ai/djl/examples/training/TrainCaptcha.java).
 
 ## Setup guide
 
@@ -18,7 +18,9 @@ The following command trains the model for two epochs. The trained model is save
 cd examples
 ./gradlew run -Dmain=ai.djl.examples.training.TrainCaptcha
 ```
+
 Your output should look like the following:
+
 ```text
 [INFO ] - Running TrainCaptcha on: cpu(0).
 [INFO ] - Load MXNet Engine Version 1.6.0 in 0.133 ms.

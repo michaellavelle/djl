@@ -18,6 +18,7 @@ import ai.djl.ndarray.BaseNDManager;
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.NDManager;
+import ai.djl.ndarray.index.NDIndex;
 import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.util.PairList;
@@ -34,6 +35,8 @@ import org.tensorflow.Operand;
 import org.tensorflow.Tensor;
 import org.tensorflow.op.Ops;
 import org.tensorflow.op.core.Constant;
+import org.tensorflow.op.random.RandomStandardNormal;
+import org.tensorflow.op.random.RandomUniform;
 import org.tensorflow.tools.buffer.ByteDataBuffer;
 import org.tensorflow.tools.buffer.DataBuffers;
 import org.tensorflow.types.TBool;
@@ -49,6 +52,7 @@ public class TfNDManager extends BaseNDManager {
     private static int nameAssignment = 1;
     EagerSession eagerSession;
     Ops tf;
+    private static Integer seed;
 
     private TfNDManager(NDManager parent, Device device) {
         super(parent, device);
@@ -76,6 +80,14 @@ public class TfNDManager extends BaseNDManager {
             tf = Ops.create(eagerSession);
         }
         return tf;
+    }
+
+    public static void setRandomSeed(Integer seed) {
+        TfNDManager.seed = seed;
+    }
+
+    public static Integer getRandomSeed() {
+        return seed;
     }
 
     static int nextNameAssignment() {
@@ -126,7 +138,7 @@ public class TfNDManager extends BaseNDManager {
 
     /** {@inheritDoc} */
     @Override
-    public NDArray create(Shape shape, DataType dataType, Device device) {
+    public NDArray create(Shape shape, DataType dataType) {
         if (shape.dimension() == 0) {
             // TensorFlow does not support empty scalar(emtpy NDArray with 0 dimension)
             // initialize with scalar 0
@@ -142,7 +154,10 @@ public class TfNDManager extends BaseNDManager {
     }
 
     public TfNDArray create(ByteBuffer data, Shape shape) {
-        return new TfNDArray(this, shape, data);
+        try (Tensor<?> tensor =
+                Tensor.of(TUint8.DTYPE, TfNDArray.toTfShape(shape), DataBuffers.of(data))) {
+            return new TfNDArray(this, tensor);
+        }
     }
 
     /** {@inheritDoc} */
@@ -186,22 +201,20 @@ public class TfNDManager extends BaseNDManager {
 
     /** {@inheritDoc} */
     @Override
-    public NDArray createCSR(
-            Buffer data, long[] indptr, long[] indices, Shape shape, Device device) {
-        return null;
+    public NDArray createCSR(Buffer data, long[] indptr, long[] indices, Shape shape) {
+        throw new UnsupportedOperationException("Not implemented");
     }
 
     /** {@inheritDoc} */
     @Override
-    public NDArray createRowSparse(
-            Buffer data, Shape dataShape, long[] indices, Shape shape, Device device) {
-        return null;
+    public NDArray createRowSparse(Buffer data, Shape dataShape, long[] indices, Shape shape) {
+        throw new UnsupportedOperationException("Not implemented");
     }
 
     /** {@inheritDoc} */
     @Override
-    public NDList load(Path path, Device device) {
-        return null;
+    public NDList load(Path path) {
+        throw new UnsupportedOperationException("Not implemented");
     }
 
     /** {@inheritDoc} */
@@ -212,7 +225,7 @@ public class TfNDManager extends BaseNDManager {
     /** {@inheritDoc} */
     @Override
     public NDList invoke(String operation, NDList src, PairList<String, ?> params) {
-        return null;
+        throw new UnsupportedOperationException("Not implemented");
     }
 
     /** {@inheritDoc} */
@@ -223,77 +236,101 @@ public class TfNDManager extends BaseNDManager {
 
     /** {@inheritDoc} */
     @Override
-    public NDArray zeros(Shape shape, DataType dataType, Device device) {
-        return new TfNDArray(
-                this, tf.zeros(tf.constant(shape.getShape()), TfDataType.toTf(dataType)));
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public NDArray ones(Shape shape, DataType dataType, Device device) {
-        return fill(shape, 1, dataType, device);
-    }
-
-    public NDArray fill(Shape shape, Number value, DataType dataType, Device device) {
-        switch (dataType) {
-            case INT32:
-                return new TfNDArray(
-                        this,
-                        tf.fill(tf.constant(shape.getShape()), tf.constant(value.intValue())));
-            case INT64:
-                return new TfNDArray(
-                        this,
-                        tf.fill(
-                                tf.constant(shape.getShape()).asOutput(),
-                                tf.constant(value.longValue())));
-            case FLOAT16:
-                return new TfNDArray(
-                        this,
-                        tf.fill(
-                                tf.constant(shape.getShape()).asOutput(),
-                                tf.constant(value.shortValue())));
-            case FLOAT64:
-                return new TfNDArray(
-                        this,
-                        tf.fill(
-                                tf.constant(shape.getShape()).asOutput(),
-                                tf.constant(value.doubleValue())));
-            default:
-                return new TfNDArray(
-                        this,
-                        tf.fill(
-                                tf.constant(shape.getShape()).asOutput(),
-                                tf.constant(value.floatValue())));
+    public NDArray zeros(Shape shape, DataType dataType) {
+        try (Tensor<?> tensor =
+                tf.zeros(tf.constant(shape.getShape()), TfDataType.toTf(dataType)).asTensor()) {
+            return new TfNDArray(this, tensor);
         }
     }
 
     /** {@inheritDoc} */
     @Override
-    public NDArray arange(float start, float stop, float step, DataType dataType, Device device) {
-        return new TfNDArray(
-                this,
-                tf.range(
-                        toConstant(start, dataType),
-                        toConstant(stop, dataType),
-                        toConstant(step, dataType)));
+    public NDArray ones(Shape shape, DataType dataType) {
+        return fill(shape, 1, dataType);
     }
 
     /** {@inheritDoc} */
     @Override
-    public NDArray eye(int rows, int cols, int k, DataType dataType, Device device) {
-        return eyeHelper(rows, cols, k, dataType, device);
+    public NDArray full(Shape shape, float value, DataType dataType) {
+        return fill(shape, value, dataType);
     }
 
-    private <T extends TType> NDArray eyeHelper(
-            int rows, int cols, int k, DataType dataType, Device device) {
-        Operand<T> diagonal =
-                ((TfNDArray) ones(new Shape(Math.min(rows, cols)), dataType, device)).asOperand();
+    public NDArray fill(Shape shape, Number value, DataType dataType) {
+        switch (dataType) {
+            case INT32:
+                try (Tensor<?> tensor =
+                        tf.fill(tf.constant(shape.getShape()), tf.constant(value.intValue()))
+                                .asTensor()) {
+                    return new TfNDArray(this, tensor);
+                }
+            case INT64:
+                try (Tensor<?> tensor =
+                        tf.fill(
+                                        tf.constant(shape.getShape()).asOutput(),
+                                        tf.constant(value.longValue()))
+                                .asTensor()) {
+                    return new TfNDArray(this, tensor);
+                }
+            case FLOAT16:
+                try (Tensor<?> tensor =
+                        tf.fill(
+                                        tf.constant(shape.getShape()).asOutput(),
+                                        tf.constant(value.shortValue()))
+                                .asTensor()) {
+                    return new TfNDArray(this, tensor);
+                }
+            case FLOAT64:
+                try (Tensor<?> tensor =
+                        tf.fill(
+                                        tf.constant(shape.getShape()).asOutput(),
+                                        tf.constant(value.doubleValue()))
+                                .asTensor()) {
+                    return new TfNDArray(this, tensor);
+                }
+            default:
+                try (Tensor<?> tensor =
+                        tf.fill(
+                                        tf.constant(shape.getShape()).asOutput(),
+                                        tf.constant(value.floatValue()))
+                                .asTensor()) {
+                    return new TfNDArray(this, tensor);
+                }
+        }
+    }
 
-        Operand<T> value = ((TfNDArray) zeros(new Shape(1))).asOperand();
+    /** {@inheritDoc} */
+    @Override
+    public NDArray arange(float start, float stop, float step, DataType dataType) {
+        if (stop <= start && step > 0) {
+            return create(new Shape(0), dataType);
+        }
+        try (Tensor<?> tensor =
+                tf.range(
+                                toConstant(start, dataType),
+                                toConstant(stop, dataType),
+                                toConstant(step, dataType))
+                        .asTensor()) {
+            return new TfNDArray(this, tensor);
+        }
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public NDArray eye(int rows, int cols, int k, DataType dataType) {
+        return eyeHelper(rows, cols, k, dataType);
+    }
+
+    private <T extends TType> NDArray eyeHelper(int rows, int cols, int k, DataType dataType) {
+        Operand<T> diagonal =
+                ((TfNDArray) ones(new Shape(Math.min(rows, cols)), dataType)).getOperand();
+
+        Operand<T> value = ((TfNDArray) zeros(new Shape(1))).getOperand();
         Operand<T> output =
                 tf.linalg.matrixDiag(
                         diagonal, tf.constant(k), tf.constant(rows), tf.constant(cols), value);
-        return new TfNDArray(this, output);
+        try (Tensor<?> tensor = output.asTensor()) {
+            return new TfNDArray(this, tensor);
+        }
     }
 
     <T extends TType> Constant<T> toConstant(Number n, DataType jType) {
@@ -302,22 +339,84 @@ public class TfNDManager extends BaseNDManager {
 
     /** {@inheritDoc} */
     @Override
-    public NDArray linspace(float start, float stop, int num, boolean endpoint, Device device) {
-        return null;
+    public NDArray linspace(float start, float stop, int num, boolean endpoint) {
+        if (num < 0) {
+            throw new IllegalArgumentException("number of samples must be non-negative.");
+        }
+        if (num == 0) {
+            return create(new Shape(0));
+        }
+        if (endpoint) {
+            try (Tensor<?> tensor =
+                    tf.linSpace(tf.constant(start), tf.constant(stop), tf.constant(num))
+                            .asTensor()) {
+                return new TfNDArray(this, tensor);
+            }
+        }
+        try (Tensor<?> tensor =
+                tf.linSpace(tf.constant(start), tf.constant(stop), tf.constant(num + 1))
+                        .asTensor()) {
+            return new TfNDArray(this, tensor).get(new NDIndex(":-1"));
+        }
     }
 
     /** {@inheritDoc} */
     @Override
-    public NDArray randomUniform(
-            float low, float high, Shape shape, DataType dataType, Device device) {
-        return null;
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public NDArray randomUniform(float low, float high, Shape shape, DataType dataType) {
+        Operand shapeOp = tf.constant(shape.getShape());
+        org.tensorflow.DataType dType;
+        if (dataType == DataType.UNKNOWN) {
+            dType = TFloat32.DTYPE;
+        } else {
+            dType = TfDataType.toTf(dataType);
+        }
+        Operand minVal = tf.dtypes.cast(tf.constant(low), dType);
+        Operand maxVal = tf.dtypes.cast(tf.constant(high), dType);
+        Operand result;
+        if (seed != null) {
+            result =
+                    tf.random.randomUniform(
+                            shapeOp,
+                            dType,
+                            RandomUniform.seed((long) 1234),
+                            RandomUniform.seed2((long) 2234));
+        } else {
+            result = tf.random.randomUniform(shapeOp, dType);
+        }
+        try (Tensor<?> tensor =
+                tf.math.add(tf.math.mul(result, tf.math.sub(maxVal, minVal)), minVal).asTensor()) {
+            return new TfNDArray(this, tensor);
+        }
     }
 
     /** {@inheritDoc} */
     @Override
-    public NDArray randomNormal(
-            float loc, float scale, Shape shape, DataType dataType, Device device) {
-        return null;
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public NDArray randomNormal(float loc, float scale, Shape shape, DataType dataType) {
+        Operand shapeOp = tf.dtypes.cast(tf.constant(shape.getShape()), TInt32.DTYPE);
+        org.tensorflow.DataType dType;
+        if (dataType == DataType.UNKNOWN) {
+            dType = TFloat32.DTYPE;
+        } else {
+            dType = TfDataType.toTf(dataType);
+        }
+        Operand mean = tf.dtypes.cast(tf.constant(loc), dType);
+        Operand std = tf.dtypes.cast(tf.constant(scale), dType);
+        Operand result;
+        if (seed != null) {
+            result =
+                    tf.random.randomStandardNormal(
+                            shapeOp,
+                            dType,
+                            RandomStandardNormal.seed((long) 1234),
+                            RandomStandardNormal.seed2((long) 2234));
+        } else {
+            result = tf.random.randomStandardNormal(shapeOp, dType);
+        }
+        try (Tensor<?> tensor = tf.math.add(tf.math.mul(result, std), mean).asTensor()) {
+            return new TfNDArray(this, tensor);
+        }
     }
 
     /** {@inheritDoc} */
@@ -377,7 +476,9 @@ public class TfNDManager extends BaseNDManager {
     @Override
     public void close() {
         super.close();
-        eagerSession.close();
+        if (eagerSession != null) {
+            eagerSession.close();
+        }
     }
 
     private static final class SystemManager extends TfNDManager {

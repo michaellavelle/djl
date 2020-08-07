@@ -10,7 +10,7 @@
  * OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
  * and limitations under the License.
  */
-#include "../build/include/ai_djl_pytorch_jni_PyTorchLibrary.h"
+#include "ai_djl_pytorch_jni_PyTorchLibrary.h"
 #include "djl_pytorch_jni_error.h"
 #include "djl_pytorch_jni_utils.h"
 
@@ -140,5 +140,32 @@ JNIEXPORT jobject JNICALL Java_ai_djl_pytorch_jni_PyTorchLibrary_torchSum__Lai_d
   const std::vector<int64_t> dims = utils::GetVecFromJLongArray(env, jdims);
   const auto* result_ptr = new torch::Tensor(tensor_ptr->sum(dims, jkeep_dim == JNI_TRUE));
   return utils::CreatePointer<torch::Tensor>(env, result_ptr);
+  API_END();
+}
+
+JNIEXPORT jobject JNICALL Java_ai_djl_pytorch_jni_PyTorchLibrary_torchProd__Lai_djl_pytorch_jni_Pointer_2(
+  JNIEnv* env, jobject jthis, jobject jhandle) {
+  API_BEGIN();
+    const auto* tensor_ptr = utils::GetPointerFromJHandle<const torch::Tensor>(env, jhandle);
+    const auto* result_ptr = new torch::Tensor(tensor_ptr->prod());
+    return utils::CreatePointer<torch::Tensor>(env, result_ptr);
+  API_END();
+}
+
+JNIEXPORT jobject JNICALL Java_ai_djl_pytorch_jni_PyTorchLibrary_torchProd__Lai_djl_pytorch_jni_Pointer_2JZ
+  (JNIEnv* env, jobject jthis, jobject jhandle, jlong jdim, jboolean jkeep_dim) {
+  API_BEGIN();
+    const auto* tensor_ptr = utils::GetPointerFromJHandle<const torch::Tensor>(env, jhandle);
+    const auto* result_ptr = new torch::Tensor(tensor_ptr->prod(jdim, jkeep_dim == JNI_TRUE));
+    return utils::CreatePointer<torch::Tensor>(env, result_ptr);
+  API_END();
+}
+
+JNIEXPORT jobject JNICALL Java_ai_djl_pytorch_jni_PyTorchLibrary_torchCumSum(
+  JNIEnv* env, jobject jthis, jobject jhandle, jlong dim) {
+  API_BEGIN();
+    const auto* tensor_ptr = utils::GetPointerFromJHandle<const torch::Tensor>(env, jhandle);
+    const auto* result_ptr = new torch::Tensor(tensor_ptr->cumsum(dim));
+    return utils::CreatePointer<torch::Tensor>(env, result_ptr);
   API_END();
 }

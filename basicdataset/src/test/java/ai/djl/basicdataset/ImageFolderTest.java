@@ -13,9 +13,9 @@
 package ai.djl.basicdataset;
 
 import ai.djl.Model;
+import ai.djl.modality.cv.ImageFactory;
 import ai.djl.modality.cv.transform.Resize;
 import ai.djl.modality.cv.transform.ToTensor;
-import ai.djl.modality.cv.util.BufferedImageUtils;
 import ai.djl.modality.cv.util.NDImageUtils;
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDManager;
@@ -26,9 +26,9 @@ import ai.djl.training.DefaultTrainingConfig;
 import ai.djl.training.Trainer;
 import ai.djl.training.TrainingConfig;
 import ai.djl.training.dataset.Batch;
-import ai.djl.training.initializer.Initializer;
 import ai.djl.training.loss.Loss;
 import ai.djl.translate.Pipeline;
+import ai.djl.translate.TranslateException;
 import java.io.IOException;
 import java.nio.file.Paths;
 import java.util.Arrays;
@@ -40,13 +40,11 @@ import org.testng.annotations.Test;
 public class ImageFolderTest {
 
     @Test
-    public void testImageFolder() throws IOException {
+    public void testImageFolder() throws IOException, TranslateException {
         Repository repository = Repository.newInstance("test", "src/test/resources/imagefolder");
-        TrainingConfig config =
-                new DefaultTrainingConfig(Loss.softmaxCrossEntropyLoss())
-                        .optInitializer(Initializer.ONES);
+        TrainingConfig config = new DefaultTrainingConfig(Loss.softmaxCrossEntropyLoss());
 
-        try (Model model = Model.newInstance()) {
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(Blocks.identityBlock());
 
             ImageFolder dataset =
@@ -56,7 +54,6 @@ public class ImageFolderTest {
                                     new Pipeline().add(new Resize(100, 100)).add(new ToTensor()))
                             .setSampling(1, false)
                             .build();
-            dataset.prepare();
 
             List<String> synsets = Arrays.asList("cat", "dog", "misc");
             Assert.assertEquals(synsets, dataset.getSynset());
@@ -64,18 +61,22 @@ public class ImageFolderTest {
             try (Trainer trainer = model.newTrainer(config)) {
                 NDManager manager = trainer.getManager();
                 NDArray cat =
-                        BufferedImageUtils.readFileToArray(
-                                manager,
-                                Paths.get("src/test/resources/imagefolder/cat/kitten.jpg"));
+                        ImageFactory.getInstance()
+                                .fromFile(
+                                        Paths.get("src/test/resources/imagefolder/cat/kitten.jpg"))
+                                .toNDArray(manager);
                 NDArray dog =
-                        BufferedImageUtils.readFileToArray(
-                                manager,
-                                Paths.get("src/test/resources/imagefolder/dog/dog_bike_car.jpg"));
-
+                        ImageFactory.getInstance()
+                                .fromFile(
+                                        Paths.get(
+                                                "src/test/resources/imagefolder/dog/dog_bike_car.jpg"))
+                                .toNDArray(manager);
                 NDArray pikachu =
-                        BufferedImageUtils.readFileToArray(
-                                manager,
-                                Paths.get("src/test/resources/imagefolder/misc/pikachu.png"));
+                        ImageFactory.getInstance()
+                                .fromFile(
+                                        Paths.get(
+                                                "src/test/resources/imagefolder/misc/pikachu.png"))
+                                .toNDArray(manager);
 
                 Iterator<Batch> ds = trainer.iterateDataset(dataset).iterator();
 

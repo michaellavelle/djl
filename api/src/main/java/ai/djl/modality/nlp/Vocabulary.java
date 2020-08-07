@@ -17,6 +17,7 @@ package ai.djl.modality.nlp;
  * token to an index.
  */
 public interface Vocabulary {
+
     /**
      * Returns the token corresponding to the given index.
      *
@@ -29,7 +30,14 @@ public interface Vocabulary {
      * Returns the index of the given token.
      *
      * @param token the token
-     * @return the index of the given token
+     * @return the index of the given token.
      */
     long getIndex(String token);
+
+    /**
+     * Returns the size of the {@link Vocabulary}.
+     *
+     * @return the size of the {@link Vocabulary}
+     */
+    long size();
 }

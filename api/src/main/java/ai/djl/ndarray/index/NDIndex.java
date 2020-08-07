@@ -13,10 +13,15 @@
 package ai.djl.ndarray.index;
 
 import ai.djl.ndarray.NDArray;
-import ai.djl.ndarray.types.Shape;
+import ai.djl.ndarray.index.dim.NDIndexAll;
+import ai.djl.ndarray.index.dim.NDIndexBooleans;
+import ai.djl.ndarray.index.dim.NDIndexElement;
+import ai.djl.ndarray.index.dim.NDIndexFixed;
+import ai.djl.ndarray.index.dim.NDIndexPick;
+import ai.djl.ndarray.index.dim.NDIndexSlice;
+import ai.djl.ndarray.types.DataType;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -35,22 +40,24 @@ import java.util.stream.Stream;
  *   <li>A range of values - Use addSliceDim
  * </ul>
  *
- * <p>We recommend creating the NDIndex using {@link #NDIndex(String)}.
+ * <p>We recommend creating the NDIndex using {@link #NDIndex(String, Object...)}.
  *
- * @see #NDIndex(String)
+ * @see #NDIndex(String, Object...)
  */
 public class NDIndex {
 
     private static final Pattern ITEM_PATTERN =
-            Pattern.compile("(\\*)|((-?\\d+)?:(-?\\d+)?(:(-?\\d+))?)|(-?\\d+)");
+            Pattern.compile("(\\*)|((-?\\d+|\\{})?:(-?\\d+|\\{})?(:(-?\\d+|\\{}))?)|(-?\\d+|\\{})");
 
     private int rank;
     private List<NDIndexElement> indices;
+    private int ellipsisIndex;
 
     /** Creates an empty {@link NDIndex} to append values to. */
     public NDIndex() {
         rank = 0;
         indices = new ArrayList<>();
+        ellipsisIndex = -1;
     }
 
     /**
@@ -84,16 +91,29 @@ public class NDIndex {
      *
      *     // Uses a negative step to reverse along the dimension.
      *     assertEquals(a.get(new NDIndex("-1")).getShape(), new Shape(5, 4, 3));
+     *
+     *     // Uses a variable argument to the index
+     *     // It can replace any number in any of these formats with {} and then the value of {}
+     *     // is specified in an argument following the indices string.
+     *     assertEquals(a.get(new NDIndex("{}, {}:{}", 0, 1, 3)).getShape(), new Shape(2, 3));
+     *
+     *     // Uses ellipsis to insert many full slices
+     *     assertEquals(a.get(new NDIndex("...")).getShape(), new Shape(5, 4, 3));
+     *
+     *     // Uses ellipsis to select all the dimensions except for last axis where we only get a subsection.
+     *     assertEquals(a.get(new NDIndex("..., 2")).getShape(), new Shape(5, 4));
      * </pre>
      *
      * @param indices a comma separated list of indices corresponding to either subsections,
      *     everything, or slices on a particular dimension
+     * @param args arguments to replace the varaible "{}" in the indices string. Can be an integer,
+     *     long, boolean {@link NDArray}, or integer {@link NDArray}.
      * @see <a href="https://docs.scipy.org/doc/numpy/reference/arrays.indexing.html">Numpy
      *     Indexing</a>
      */
-    public NDIndex(String indices) {
+    public NDIndex(String indices, Object... args) {
         this();
-        addIndices(indices);
+        addIndices(indices, args);
     }
 
     /**
@@ -134,6 +154,15 @@ public class NDIndex {
     }
 
     /**
+     * Returns the index of the ellipsis.
+     *
+     * @return the index of the ellipsis within this index or -1 for none.
+     */
+    public int getEllipsisIndex() {
+        return ellipsisIndex;
+    }
+
+    /**
      * Returns the index affecting the given dimension.
      *
      * @param dimension the affected dimension
@@ -155,15 +184,33 @@ public class NDIndex {
     /**
      * Updates the NDIndex by appending indices to the array.
      *
-     * @param indices the indices to add similar to {@link #NDIndex(String)}
+     * @param indices the indices to add similar to {@link #NDIndex(String, Object...)}
+     * @param args arguments to replace the varaible "{}" in the indices string. Can be an integer,
+     *     long, boolean {@link NDArray}, or integer {@link NDArray}.
      * @return the updated {@link NDIndex}
-     * @see #NDIndex(String)
+     * @see #NDIndex(String, Object...)
      */
-    public final NDIndex addIndices(String indices) {
+    public final NDIndex addIndices(String indices, Object... args) {
         String[] indexItems = indices.split(",");
         rank += indexItems.length;
-        for (String indexItem : indexItems) {
-            addIndexItem(indexItem);
+        int argIndex = 0;
+        for (int i = 0; i < indexItems.length; ++i) {
+            if (indexItems[i].trim().equals("...")) {
+                // make sure ellipsis appear only once
+                if (ellipsisIndex != -1) {
+                    throw new IllegalArgumentException(
+                            "an index can only have a single ellipsis (\"...\")");
+                }
+                ellipsisIndex = i;
+            } else {
+                argIndex = addIndexItem(indexItems[i], argIndex, args);
+            }
+        }
+        if (ellipsisIndex != -1) {
+            rank--;
+        }
+        if (argIndex != args.length) {
+            throw new IllegalArgumentException("Incorrect number of index arguments");
         }
         return this;
     }
@@ -210,6 +257,25 @@ public class NDIndex {
     }
 
     /**
+     * Appends multiple new index to get all values in the dimension.
+     *
+     * @param count how many axes of {@link NDIndexAll} to add.
+     * @return the updated {@link NDIndex}
+     * @throws IllegalArgumentException if count is negative
+     */
+    public NDIndex addAllDim(int count) {
+        if (count < 0) {
+            throw new IllegalArgumentException(
+                    "The number of index dimensions to add can't be negative");
+        }
+        rank += count;
+        for (int i = 0; i < count; i++) {
+            indices.add(new NDIndexAll());
+        }
+        return this;
+    }
+
+    /**
      * Appends a new index to slice the dimension and returns a range of values.
      *
      * @param min the minimum of the range
@@ -237,6 +303,21 @@ public class NDIndex {
     }
 
     /**
+     * Appends a picking index that gets values by index in the axis.
+     *
+     * @param index the indices should be NDArray. For each element in the indices array, it acts
+     *     like a fixed index returning an element of that shape. So, the final shape would be
+     *     indices.getShape().addAll(target.getShape().slice(1)) (assuming it is the first index
+     *     element).
+     * @return the updated {@link NDIndex}
+     */
+    public NDIndex addPickDim(NDArray index) {
+        rank++;
+        indices.add(new NDIndexPick(index));
+        return this;
+    }
+
+    /**
      * Returns a stream of the NDIndexElements.
      *
      * @return a stream of the NDIndexElements
@@ -245,105 +326,87 @@ public class NDIndex {
         return indices.stream();
     }
 
-    private void addIndexItem(String indexItem) {
+    private int addIndexItem(String indexItem, int argIndex, Object[] args) {
         indexItem = indexItem.trim();
         Matcher m = ITEM_PATTERN.matcher(indexItem);
         if (!m.matches()) {
             throw new IllegalArgumentException("Invalid argument index: " + indexItem);
         }
-
+        // "*" case
         String star = m.group(1);
         if (star != null) {
             indices.add(new NDIndexAll());
-            return;
+            return argIndex;
         }
-
+        // "number" number only case
         String digit = m.group(7);
         if (digit != null) {
-            indices.add(new NDIndexFixed(Long.parseLong(digit)));
-            return;
+            if ("{}".equals(digit)) {
+                Object arg = args[argIndex];
+                if (arg instanceof Integer) {
+                    indices.add(new NDIndexFixed((Integer) arg));
+                    return argIndex + 1;
+                } else if (arg instanceof Long) {
+                    indices.add(new NDIndexFixed((Long) arg));
+                    return argIndex + 1;
+                } else if (arg instanceof NDArray) {
+                    NDArray array = (NDArray) arg;
+                    if (array.getDataType() == DataType.BOOLEAN) {
+                        indices.add(new NDIndexBooleans(array));
+                        return argIndex + 1;
+                    } else if (array.getDataType().isInteger()) {
+                        indices.add(new NDIndexPick(array));
+                        return argIndex + 1;
+                    }
+                }
+                throw new IllegalArgumentException("Unknown argument: " + arg);
+            } else {
+                indices.add(new NDIndexFixed(Long.parseLong(digit)));
+                return argIndex;
+            }
         }
 
         // Slice
-        Long min = m.group(3) != null ? Long.parseLong(m.group(3)) : null;
-        Long max = m.group(4) != null ? Long.parseLong(m.group(4)) : null;
-        Long step = m.group(6) != null ? Long.parseLong(m.group(6)) : null;
+        Long min = null;
+        Long max = null;
+        Long step = null;
+        if (m.group(3) != null) {
+            min = parseSliceItem(m.group(3), argIndex, args);
+            if ("{}".equals(m.group(3))) {
+                argIndex++;
+            }
+        }
+        if (m.group(4) != null) {
+            max = parseSliceItem(m.group(4), argIndex, args);
+            if ("{}".equals(m.group(4))) {
+                argIndex++;
+            }
+        }
+        if (m.group(6) != null) {
+            step = parseSliceItem(m.group(6), argIndex, args);
+            if ("{}".equals(m.group(6))) {
+                argIndex++;
+            }
+        }
         if (min == null && max == null && step == null) {
             indices.add(new NDIndexAll());
         } else {
             indices.add(new NDIndexSlice(min, max, step));
         }
+        return argIndex;
     }
 
-    /**
-     * Returns this index as a full slice if it can be represented as one.
-     *
-     * @param target the shape to index
-     * @return the full slice if it can be represented as one
-     */
-    public Optional<NDIndexFullSlice> getAsFullSlice(Shape target) {
-        if (!stream().allMatch(
-                        ie ->
-                                ie instanceof NDIndexAll
-                                        || ie instanceof NDIndexFixed
-                                        || ie instanceof NDIndexSlice)) {
-            return Optional.empty();
-        }
-        int indDimensions = getRank();
-        int targetDimensions = target.dimension();
-        if (indDimensions > target.dimension()) {
-            throw new IllegalArgumentException(
-                    "The index has too many dimensions - "
-                            + indDimensions
-                            + " dimensions for array with "
-                            + targetDimensions
-                            + " dimensions");
-        }
-        long[] min = new long[targetDimensions];
-        long[] max = new long[targetDimensions];
-        long[] step = new long[targetDimensions];
-        List<Integer> toSqueeze = new ArrayList<>(targetDimensions);
-        long[] shape = new long[targetDimensions];
-        List<Long> squeezedShape = new ArrayList<>(targetDimensions);
-        for (int i = 0; i < indDimensions; i++) {
-            NDIndexElement ie = get(i);
-            if (ie instanceof NDIndexFixed) {
-                min[i] = ((NDIndexFixed) ie).getIndex();
-                max[i] = ((NDIndexFixed) ie).getIndex() + 1;
-                step[i] = 1;
-                toSqueeze.add(i);
-                shape[i] = 1;
-            } else if (ie instanceof NDIndexSlice) {
-                NDIndexSlice slice = (NDIndexSlice) ie;
-                long rawMin = Optional.ofNullable(slice.getMin()).orElse(0L);
-                min[i] = rawMin < 0 ? Math.floorMod(rawMin, target.get(i)) : rawMin;
-                long rawMax = Optional.ofNullable(slice.getMax()).orElse(target.size(i));
-                max[i] = rawMax < 0 ? Math.floorMod(rawMax, target.get(i)) : rawMax;
-                step[i] = Optional.ofNullable(slice.getStep()).orElse(1L);
-                if (step[i] > 0) {
-                    shape[i] = (max[i] - min[i] - 1) / (step[i] + 1);
-                } else {
-                    shape[i] = (min[i] - max[i]) / (-step[i] + 1);
-                }
-                squeezedShape.add(shape[i]);
-            } else if (ie instanceof NDIndexAll) {
-                min[i] = 0;
-                max[i] = target.size(i);
-                step[i] = 1;
-                shape[i] = target.size(i);
-                squeezedShape.add(target.size(i));
+    private Long parseSliceItem(String sliceItem, int argIndex, Object... args) {
+        if ("{}".equals(sliceItem)) {
+            Object arg = args[argIndex];
+            if (arg instanceof Integer) {
+                return ((Integer) arg).longValue();
+            } else if (arg instanceof Long) {
+                return (Long) arg;
             }
+            throw new IllegalArgumentException("Unknown slice argument: " + arg);
+        } else {
+            return Long.parseLong(sliceItem);
         }
-        for (int i = indDimensions; i < target.dimension(); i++) {
-            min[i] = 0;
-            max[i] = target.size(i);
-            step[i] = 1;
-            shape[i] = target.size(i);
-            squeezedShape.add(target.size(i));
-        }
-        NDIndexFullSlice fullSlice =
-                new NDIndexFullSlice(
-                        min, max, step, toSqueeze, new Shape(shape), new Shape(squeezedShape));
-        return Optional.of(fullSlice);
     }
 }

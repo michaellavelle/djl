@@ -101,10 +101,13 @@ public interface TrainingListener {
          * A default {@link TrainingListener} set including batch output logging and output
          * directory.
          *
-         * @param outputDir the output directory to store created log files
+         * @param outputDir the output directory to store created log files. Can't be null
          * @return the new set of listeners
          */
         static TrainingListener[] logging(String outputDir) {
+            if (outputDir == null) {
+                throw new IllegalArgumentException("The output directory can't be null");
+            }
             return new TrainingListener[] {
                 new EpochTrainingListener(),
                 new MemoryTrainingListener(outputDir),

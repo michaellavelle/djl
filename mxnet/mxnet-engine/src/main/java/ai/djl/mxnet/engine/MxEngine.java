@@ -19,6 +19,9 @@ import ai.djl.mxnet.jna.JnaUtils;
 import ai.djl.mxnet.jna.LibUtils;
 import ai.djl.ndarray.NDManager;
 import ai.djl.training.GradientCollector;
+import ai.djl.training.LocalParameterServer;
+import ai.djl.training.ParameterServer;
+import ai.djl.training.optimizer.Optimizer;
 import ai.djl.util.RandomUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -81,8 +84,8 @@ public final class MxEngine extends Engine {
 
     /** {@inheritDoc} */
     @Override
-    public Model newModel(Device device) {
-        return new MxModel(device);
+    public Model newModel(String name, Device device) {
+        return new MxModel(name, device);
     }
 
     /** {@inheritDoc} */
@@ -101,6 +104,14 @@ public final class MxEngine extends Engine {
     @Override
     public GradientCollector newGradientCollector() {
         return new MxGradientCollector();
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public ParameterServer newParameterServer(Optimizer optimizer) {
+        return Boolean.getBoolean("ai.djl.use_local_parameter_server")
+                ? new LocalParameterServer(optimizer)
+                : new MxParameterServer(optimizer);
     }
 
     /** {@inheritDoc} */

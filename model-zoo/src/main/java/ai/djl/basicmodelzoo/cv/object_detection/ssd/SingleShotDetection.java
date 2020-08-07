@@ -23,19 +23,16 @@ import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.AbstractBlock;
 import ai.djl.nn.Activation;
 import ai.djl.nn.Block;
-import ai.djl.nn.BlockList;
-import ai.djl.nn.Parameter;
+import ai.djl.nn.LambdaBlock;
 import ai.djl.nn.SequentialBlock;
-import ai.djl.nn.convolutional.Conv2D;
+import ai.djl.nn.convolutional.Conv2d;
 import ai.djl.nn.norm.BatchNorm;
 import ai.djl.nn.pooling.Pool;
 import ai.djl.training.ParameterStore;
 import ai.djl.util.PairList;
 import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -54,23 +51,32 @@ public final class SingleShotDetection extends AbstractBlock {
     private int numClasses;
 
     private SingleShotDetection(Builder builder) {
+        super(VERSION);
         features = builder.features;
+        features.forEach((block) -> addChildBlock(block.getClass().getSimpleName(), block));
         numClasses = builder.numClasses;
         classPredictionBlocks = builder.classPredictionBlocks;
+        classPredictionBlocks.forEach(
+                (block) -> addChildBlock(block.getClass().getSimpleName(), block));
         anchorPredictionBlocks = builder.anchorPredictionBlocks;
+        anchorPredictionBlocks.forEach(
+                (block) -> addChildBlock(block.getClass().getSimpleName(), block));
         multiBoxPriors = builder.multiBoxPriors;
     }
 
     /** {@inheritDoc} */
     @Override
     public NDList forward(
-            ParameterStore parameterStore, NDList inputs, PairList<String, Object> params) {
+            ParameterStore parameterStore,
+            NDList inputs,
+            boolean training,
+            PairList<String, Object> params) {
         NDList networkOutput = inputs;
         NDArray[] anchorsOutputs = new NDArray[features.size()];
         NDArray[] classOutputs = new NDArray[features.size()];
         NDArray[] boundingBoxOutputs = new NDArray[features.size()];
         for (int i = 0; i < features.size(); i++) {
-            networkOutput = features.get(i).forward(parameterStore, networkOutput);
+            networkOutput = features.get(i).forward(parameterStore, networkOutput, training);
 
             MultiBoxPrior multiBoxPrior = multiBoxPriors.get(i);
 
@@ -78,21 +84,20 @@ public final class SingleShotDetection extends AbstractBlock {
             classOutputs[i] =
                     classPredictionBlocks
                             .get(i)
-                            .forward(parameterStore, networkOutput)
+                            .forward(parameterStore, networkOutput, training)
                             .singletonOrThrow();
             boundingBoxOutputs[i] =
                     anchorPredictionBlocks
                             .get(i)
-                            .forward(parameterStore, networkOutput)
+                            .forward(parameterStore, networkOutput, training)
                             .singletonOrThrow();
         }
         NDArray anchors = NDArrays.concat(new NDList(anchorsOutputs), 1);
         NDArray classPredictions = concatPredictions(new NDList(classOutputs));
         NDArray boundingBoxPredictions = concatPredictions(new NDList(boundingBoxOutputs));
-        return new NDList(
-                anchors,
-                classPredictions.reshape(classPredictions.size(0), -1, numClasses + 1),
-                boundingBoxPredictions);
+        classPredictions = classPredictions.reshape(classPredictions.size(0), -1, numClasses + 1);
+
+        return new NDList(anchors, classPredictions, boundingBoxPredictions);
     }
 
     private NDArray concatPredictions(NDList output) {
@@ -102,18 +107,6 @@ public final class SingleShotDetection extends AbstractBlock {
                         .map(array -> array.transpose(0, 2, 3, 1).reshape(array.size(0), -1))
                         .toArray(NDArray[]::new);
         return NDArrays.concat(new NDList(flattenOutput), 1);
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public List<Parameter> getDirectParameters() {
-        return Collections.emptyList();
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public Shape getParameterShape(String name, Shape[] inputShapes) {
-        throw new IllegalArgumentException("SSDBlock has no parameters");
     }
 
     /** {@inheritDoc} */
@@ -197,64 +190,12 @@ public final class SingleShotDetection extends AbstractBlock {
 
     /** {@inheritDoc} */
     @Override
-    public BlockList getChildren() {
-        int size = features.size() + classPredictionBlocks.size() + anchorPredictionBlocks.size();
-        BlockList children = new BlockList(size);
-        int precision = (int) Math.log10(size) + 1;
-        String format = "%0" + precision + "d:%s";
-        int i = 0;
-        for (Block block : features) {
-            String name = String.format(format, i, block.getClass().getSimpleName());
-            children.add(name, block);
-            i++;
-        }
-        for (Block block : classPredictionBlocks) {
-            String name = String.format(format, i, block.getClass().getSimpleName());
-            children.add(name, block);
-            i++;
-        }
-        for (Block block : anchorPredictionBlocks) {
-            String name = String.format(format, i, block.getClass().getSimpleName());
-            children.add(name, block);
-            i++;
-        }
-        return children;
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public void saveParameters(DataOutputStream os) throws IOException {
-        os.writeByte(VERSION);
-        saveInputShapes(os);
-        for (Block block : features) {
-            block.saveParameters(os);
-        }
-        for (Block block : classPredictionBlocks) {
-            block.saveParameters(os);
-        }
-        for (Block block : anchorPredictionBlocks) {
-            block.saveParameters(os);
-        }
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public void loadParameters(NDManager manager, DataInputStream is)
+    public void loadMetadata(byte version, DataInputStream is)
             throws IOException, MalformedModelException {
-        byte version = is.readByte();
         if (version == VERSION) {
             readInputShapes(is);
         } else if (version != 1) {
             throw new MalformedModelException("Unsupported encoding version: " + version);
-        }
-        for (Block block : features) {
-            block.loadParameters(manager, is);
-        }
-        for (Block block : classPredictionBlocks) {
-            block.loadParameters(manager, is);
-        }
-        for (Block block : anchorPredictionBlocks) {
-            block.loadParameters(manager, is);
         }
     }
 
@@ -269,15 +210,15 @@ public final class SingleShotDetection extends AbstractBlock {
         for (int i = 0; i < 2; i++) {
             sequentialBlock
                     .add(
-                            Conv2D.builder()
-                                    .setKernel(new Shape(3, 3))
-                                    .setNumFilters(numFilters)
-                                    .optPad(new Shape(1, 1))
+                            Conv2d.builder()
+                                    .setKernelShape(new Shape(3, 3))
+                                    .setFilters(numFilters)
+                                    .optPadding(new Shape(1, 1))
                                     .build())
                     .add(BatchNorm.builder().build())
                     .add(Activation::relu);
         }
-        sequentialBlock.add(Pool.maxPool2DBlock(new Shape(2, 2), new Shape(2, 2), new Shape(0, 0)));
+        sequentialBlock.add(Pool.maxPool2dBlock(new Shape(2, 2), new Shape(2, 2), new Shape(0, 0)));
         return sequentialBlock;
     }
 
@@ -288,11 +229,11 @@ public final class SingleShotDetection extends AbstractBlock {
      * @param numClasses the number of classes
      * @return a class prediction block used in an SSD
      */
-    public static Conv2D getClassPredictionBlock(int numAnchors, int numClasses) {
-        return Conv2D.builder()
-                .setKernel(new Shape(3, 3))
-                .setNumFilters((numClasses + 1) * numAnchors)
-                .optPad(new Shape(1, 1))
+    public static Conv2d getClassPredictionBlock(int numAnchors, int numClasses) {
+        return Conv2d.builder()
+                .setKernelShape(new Shape(3, 3))
+                .setFilters((numClasses + 1) * numAnchors)
+                .optPadding(new Shape(1, 1))
                 .build();
     }
 
@@ -302,11 +243,11 @@ public final class SingleShotDetection extends AbstractBlock {
      * @param numAnchors the number of anchors
      * @return a anchor prediction block used in an SSD
      */
-    public static Conv2D getAnchorPredictionBlock(int numAnchors) {
-        return Conv2D.builder()
-                .setKernel(new Shape(3, 3))
-                .setNumFilters(4 * numAnchors)
-                .optPad(new Shape(1, 1))
+    public static Conv2d getAnchorPredictionBlock(int numAnchors) {
+        return Conv2d.builder()
+                .setKernelShape(new Shape(3, 3))
+                .setFilters(4 * numAnchors)
+                .optPadding(new Shape(1, 1))
                 .build();
     }
 
@@ -393,9 +334,9 @@ public final class SingleShotDetection extends AbstractBlock {
         }
 
         /**
-         * Sets the {@code Conv2D} blocks to be appended to the network to get multi-output network.
+         * Sets the {@code Conv2d} blocks to be appended to the network to get multi-output network.
          *
-         * @param features List of {@code Conv2D} blocks to be appended
+         * @param features List of {@code Conv2d} blocks to be appended
          * @return Returns this Builder
          */
         public Builder optFeatures(List<Block> features) {
@@ -432,7 +373,13 @@ public final class SingleShotDetection extends AbstractBlock {
                 }
             }
             if (globalPool) {
-                features.add(Pool.globalAvgPool2DBlock());
+                features.add(
+                        LambdaBlock.singleton(
+                                array -> {
+                                    NDArray result = Pool.globalAvgPool2d(array);
+                                    // result shape: (N, C) MXNet multi-box takes (N, C, 1, 1)
+                                    return result.reshape(result.getShape().add(1, 1));
+                                }));
             }
             int numberOfFeatureMaps = features.size();
             if (sizes.size() != ratios.size() || sizes.size() != numberOfFeatureMaps) {

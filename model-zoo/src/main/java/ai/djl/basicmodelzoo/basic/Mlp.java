@@ -37,7 +37,7 @@ public class Mlp extends SequentialBlock {
      * Create an MLP NeuralNetwork using RELU.
      *
      * @param input the size of the input vector
-     * @param output the size of the input vector
+     * @param output the size of the output vector
      * @param hidden the sizes of all of the hidden layers
      */
     public Mlp(int input, int output, int[] hidden) {
@@ -48,17 +48,17 @@ public class Mlp extends SequentialBlock {
      * Create an MLP NeuralNetwork.
      *
      * @param input the size of the input vector
-     * @param output the size of the input vector
+     * @param output the size of the output vector
      * @param hidden the sizes of all of the hidden layers
      * @param activation the activation function to use
      */
     public Mlp(int input, int output, int[] hidden, Function<NDList, NDList> activation) {
         add(Blocks.batchFlattenBlock(input));
         for (int hiddenSize : hidden) {
-            add(Linear.builder().setOutChannels(hiddenSize).build());
+            add(Linear.builder().setUnits(hiddenSize).build());
             add(activation);
         }
 
-        add(Linear.builder().setOutChannels(output).build());
+        add(Linear.builder().setUnits(output).build());
     }
 }

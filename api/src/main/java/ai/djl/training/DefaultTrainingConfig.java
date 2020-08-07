@@ -149,6 +149,7 @@ public class DefaultTrainingConfig implements TrainingConfig {
         return loss;
     }
 
+    /** {@inheritDoc} */
     @Override
     public DataManager getDataManager() {
         return dataManager;

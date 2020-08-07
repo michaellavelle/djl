@@ -12,35 +12,34 @@
  */
 package ai.djl.modality.nlp.embedding;
 
+import ai.djl.modality.nlp.SimpleVocabulary;
 import ai.djl.modality.nlp.preprocess.SimpleTokenizer;
-import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDManager;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 
 public class TrainableWordEmbeddingTest {
     private static final String TEST_STRING =
-            "Deep Java Library (DJL) is an open-source, high-level, framework-agnostic Java API for deep learning. DJL is designed to be easy to get started with and simple to\n"
+            "Deep Java Library (DJL) is an open-source, high-level, engine-agnostic Java framework for deep learning. DJL is designed to be easy to get started with and simple to\n"
                     + "use for Java developers. DJL provides a native Java development experience and functions like any other regular Java library.\n";
     private static final String UNKNOWN_TOKEN = "UNKNOWN_TOKEN";
 
     @Test
-    public void testWordEmbedding() throws EmbeddingException {
+    public void testWordEmbedding() {
         TrainableWordEmbedding trainableWordEmbedding =
                 TrainableWordEmbedding.builder()
-                        .setItems(new SimpleTokenizer().tokenize(TEST_STRING))
+                        .setVocabulary(
+                                new SimpleVocabulary(new SimpleTokenizer().tokenize(TEST_STRING)))
                         .setEmbeddingSize(10)
                         .optUseDefault(true)
                         .build();
         try (NDManager manager = NDManager.newBaseManager()) {
-            NDArray index = trainableWordEmbedding.preprocessWordToEmbed(manager, "Java");
-            Assert.assertTrue(index.isScalar());
-            String word = trainableWordEmbedding.unembedWord(index);
+            long index = trainableWordEmbedding.preprocessWordToEmbed("Java");
+            String word = trainableWordEmbedding.unembedWord(manager.create(index));
             Assert.assertEquals(word, "Java");
 
-            index = trainableWordEmbedding.preprocessWordToEmbed(manager, UNKNOWN_TOKEN);
-            Assert.assertTrue(index.isScalar());
-            word = trainableWordEmbedding.unembedWord(index);
+            index = trainableWordEmbedding.preprocessWordToEmbed(UNKNOWN_TOKEN);
+            word = trainableWordEmbedding.unembedWord(manager.create(index));
             Assert.assertEquals(word, "<unk>");
         }
     }

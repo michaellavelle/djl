@@ -17,7 +17,6 @@ import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.NDManager;
 import ai.djl.translate.Batchifier;
 import ai.djl.translate.Pipeline;
-import ai.djl.translate.TranslateException;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Iterator;
@@ -45,7 +44,8 @@ public class DataIterable implements Iterable<Batch>, Iterator<Batch> {
 
     private RandomAccessDataset dataset;
     private NDManager manager;
-    private Batchifier batchifier;
+    private Batchifier dataBatchifier;
+    private Batchifier labelBatchifier;
     private Pipeline pipeline;
     private Pipeline targetPipeline;
     private ExecutorService executor;
@@ -55,6 +55,7 @@ public class DataIterable implements Iterable<Batch>, Iterator<Batch> {
     // for multithreading
     private Queue<Future<Batch>> queue;
     private AtomicInteger progressCounter;
+    private boolean autoClose;
 
     /**
      * Creates a new instance of {@code DataIterable} with the given parameters.
@@ -62,7 +63,8 @@ public class DataIterable implements Iterable<Batch>, Iterator<Batch> {
      * @param dataset the dataset to iterate on
      * @param manager the manager to create the arrays
      * @param sampler a sampler to sample data with
-     * @param batchifier a batchifier
+     * @param dataBatchifier a batchifier for data
+     * @param labelBatchifier a batchifier for labels
      * @param pipeline the pipeline of transforms to apply on the data
      * @param targetPipeline the pipeline of transforms to apply on the labels
      * @param executor an {@link ExecutorService}
@@ -73,7 +75,8 @@ public class DataIterable implements Iterable<Batch>, Iterator<Batch> {
             RandomAccessDataset dataset,
             NDManager manager,
             Sampler sampler,
-            Batchifier batchifier,
+            Batchifier dataBatchifier,
+            Batchifier labelBatchifier,
             Pipeline pipeline,
             Pipeline targetPipeline,
             ExecutorService executor,
@@ -81,12 +84,15 @@ public class DataIterable implements Iterable<Batch>, Iterator<Batch> {
             Device device) {
         this.dataset = dataset;
         this.manager = manager.newSubManager();
-        this.batchifier = batchifier;
+        this.dataBatchifier = dataBatchifier;
+        this.labelBatchifier = labelBatchifier;
         this.pipeline = pipeline;
         this.targetPipeline = targetPipeline;
         this.executor = executor;
         this.device = device;
         progressCounter = new AtomicInteger(0);
+        String close = System.getProperty("ai.djl.dataiterator.autoclose", "true");
+        autoClose = Boolean.parseBoolean(close);
 
         sample = sampler.sample(dataset);
         if (executor != null) {
@@ -109,8 +115,7 @@ public class DataIterable implements Iterable<Batch>, Iterator<Batch> {
     public boolean hasNext() {
         if (executor != null) {
             if (queue.isEmpty()) {
-                String close = System.getProperty("ai.djl.dataiterator.autoclose", "true");
-                if (Boolean.parseBoolean(close)) {
+                if (autoClose) {
                     manager.close();
                 }
                 return false;
@@ -118,8 +123,7 @@ public class DataIterable implements Iterable<Batch>, Iterator<Batch> {
             return true;
         }
         if (!sample.hasNext()) {
-            String close = System.getProperty("ai.djl.dataiterator.autoclose", "true");
-            if (Boolean.parseBoolean(close)) {
+            if (autoClose) {
                 manager.close();
             }
             return false;
@@ -136,7 +140,7 @@ public class DataIterable implements Iterable<Batch>, Iterator<Batch> {
             try {
                 int progress = progressCounter.addAndGet(indices.size());
                 return fetch(indices, progress);
-            } catch (IOException | TranslateException e) {
+            } catch (IOException e) {
                 logger.error(e.getMessage());
                 throw new IllegalStateException("Data loading failed", e);
             }
@@ -153,7 +157,7 @@ public class DataIterable implements Iterable<Batch>, Iterator<Batch> {
         }
     }
 
-    private Batch fetch(List<Long> indices, int progress) throws IOException, TranslateException {
+    private Batch fetch(List<Long> indices, int progress) throws IOException {
         NDManager subManager = manager.newSubManager();
         int batchSize = indices.size();
         NDList[] data = new NDList[batchSize];
@@ -168,8 +172,8 @@ public class DataIterable implements Iterable<Batch>, Iterator<Batch> {
 
             labels[i] = record.getLabels();
         }
-        NDList batchData = batchifier.batchify(data);
-        NDList batchLabels = batchifier.batchify(labels);
+        NDList batchData = dataBatchifier.batchify(data);
+        NDList batchLabels = labelBatchifier.batchify(labels);
 
         Arrays.stream(data).forEach(NDList::close);
         Arrays.stream(labels).forEach(NDList::close);
@@ -180,15 +184,16 @@ public class DataIterable implements Iterable<Batch>, Iterator<Batch> {
         }
         // pin to a specific device
         if (device != null) {
-            batchData = batchData.asInDevice(device, false);
-            batchLabels = batchLabels.asInDevice(device, false);
+            batchData = batchData.toDevice(device, false);
+            batchLabels = batchLabels.toDevice(device, false);
         }
         return new Batch(
                 subManager,
                 batchData,
                 batchLabels,
                 batchSize,
-                batchifier,
+                dataBatchifier,
+                labelBatchifier,
                 progress,
                 dataset.size());
     }
@@ -216,7 +221,7 @@ public class DataIterable implements Iterable<Batch>, Iterator<Batch> {
 
         /** {@inheritDoc} */
         @Override
-        public Batch call() throws IOException, TranslateException {
+        public Batch call() throws IOException {
             return fetch(indices, progress);
         }
     }

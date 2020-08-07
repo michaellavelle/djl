@@ -12,23 +12,15 @@
  */
 package ai.djl.modality.nlp.embedding;
 
-import ai.djl.MalformedModelException;
 import ai.djl.ndarray.NDArray;
-import ai.djl.ndarray.NDArrays;
 import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.NDManager;
 import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.AbstractBlock;
-import ai.djl.nn.BlockList;
-import ai.djl.nn.Parameter;
 import ai.djl.training.ParameterStore;
 import ai.djl.util.PairList;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -41,33 +33,34 @@ public class TrainableTextEmbedding extends AbstractBlock implements TextEmbeddi
     private TrainableWordEmbedding trainableWordEmbedding;
 
     /**
-     * Constructs a {@link SimpleTextEmbedding}.
+     * Constructs a {@link TrainableTextEmbedding}.
      *
      * @param wordEmbedding the word embedding to embed each word
      */
     public TrainableTextEmbedding(TrainableWordEmbedding wordEmbedding) {
-        this.trainableWordEmbedding = wordEmbedding;
+        super(VERSION);
+        this.trainableWordEmbedding = addChildBlock("trainableWordEmbedding", wordEmbedding);
     }
 
     /** {@inheritDoc} */
     @Override
-    public NDArray preprocessTextToEmbed(NDManager manager, List<String> text) {
-        NDList result = new NDList(text.size());
-        for (String token : text) {
-            result.add(trainableWordEmbedding.preprocessWordToEmbed(manager, token));
+    public long[] preprocessTextToEmbed(List<String> text) {
+        long[] result = new long[text.size()];
+        for (int i = 0; i < text.size(); i++) {
+            result[i] = trainableWordEmbedding.preprocessWordToEmbed(text.get(i));
         }
-        return NDArrays.stack(result);
+        return result;
+    }
+
+    @Override
+    public NDArray embedText(NDArray textIndices) throws EmbeddingException {
+        throw new UnsupportedOperationException(
+                "EmbedText operation is not supported by this class.");
     }
 
     /** {@inheritDoc} */
     @Override
-    public NDArray embedText(NDArray text) {
-        throw new UnsupportedOperationException("This operation is not supported by this class.");
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public List<String> unembedText(NDArray textEmbedding) throws EmbeddingException {
+    public List<String> unembedText(NDArray textEmbedding) {
         NDList split = textEmbedding.split(textEmbedding.getShape().get(0));
         List<String> result = new ArrayList<>(split.size());
         for (NDArray token : split) {
@@ -78,53 +71,20 @@ public class TrainableTextEmbedding extends AbstractBlock implements TextEmbeddi
 
     @Override
     public NDList forward(
-            ParameterStore parameterStore, NDList inputs, PairList<String, Object> params) {
-        return trainableWordEmbedding.forward(parameterStore, inputs, params);
+            ParameterStore parameterStore,
+            NDList inputs,
+            boolean training,
+            PairList<String, Object> params) {
+        return trainableWordEmbedding.forward(parameterStore, inputs, training, params);
     }
 
     @Override
-    public Shape[] initialize(NDManager manager, DataType dataType, Shape... inputShapes) {
-        beforeInitialize(inputShapes);
-        return trainableWordEmbedding.initialize(manager, dataType, inputShapes);
-    }
-
-    @Override
-    public BlockList getChildren() {
-        return new BlockList(
-                Collections.singletonList("trainableWordEmbedding"),
-                Collections.singletonList(trainableWordEmbedding));
-    }
-
-    @Override
-    public List<Parameter> getDirectParameters() {
-        return Collections.emptyList();
-    }
-
-    @Override
-    public Shape getParameterShape(String name, Shape[] inputShapes) {
-        throw new IllegalArgumentException("TrainableTextEmbedding have no parameters");
+    public void initializeChildBlocks(NDManager manager, DataType dataType, Shape... inputShapes) {
+        trainableWordEmbedding.initialize(manager, dataType, inputShapes);
     }
 
     @Override
     public Shape[] getOutputShapes(NDManager manager, Shape[] inputShapes) {
         return trainableWordEmbedding.getOutputShapes(manager, inputShapes);
-    }
-
-    @Override
-    public void saveParameters(DataOutputStream os) throws IOException {
-        os.writeByte(VERSION);
-        saveInputShapes(os);
-        trainableWordEmbedding.saveParameters(os);
-    }
-
-    @Override
-    public void loadParameters(NDManager manager, DataInputStream is)
-            throws IOException, MalformedModelException {
-        byte version = is.readByte();
-        if (version != VERSION) {
-            throw new MalformedModelException("Unsupported encoding version: " + version);
-        }
-        readInputShapes(is);
-        trainableWordEmbedding.loadParameters(manager, is);
     }
 }

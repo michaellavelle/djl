@@ -15,6 +15,7 @@ package ai.djl.pytorch.zoo.cv.objectdetection;
 import ai.djl.Application;
 import ai.djl.Device;
 import ai.djl.MalformedModelException;
+import ai.djl.modality.cv.Image;
 import ai.djl.modality.cv.output.DetectedObjects;
 import ai.djl.modality.cv.transform.Normalize;
 import ai.djl.modality.cv.transform.Resize;
@@ -29,12 +30,10 @@ import ai.djl.repository.zoo.BaseModelLoader;
 import ai.djl.repository.zoo.Criteria;
 import ai.djl.repository.zoo.ModelNotFoundException;
 import ai.djl.repository.zoo.ZooModel;
-import ai.djl.translate.Pipeline;
 import ai.djl.translate.Translator;
 import ai.djl.translate.TranslatorFactory;
 import ai.djl.util.Pair;
 import ai.djl.util.Progress;
-import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
@@ -50,13 +49,15 @@ import java.util.Map;
  *
  * @see ai.djl.pytorch.engine.PtSymbolBlock
  */
-public class SingleShotDetectionModelLoader
-        extends BaseModelLoader<BufferedImage, DetectedObjects> {
+public class SingleShotDetectionModelLoader extends BaseModelLoader<Image, DetectedObjects> {
 
     private static final Application APPLICATION = Application.CV.OBJECT_DETECTION;
     private static final String GROUP_ID = PtModelZoo.GROUP_ID;
     private static final String ARTIFACT_ID = "ssd";
     private static final String VERSION = "0.0.1";
+
+    private static final float[] MEAN = {0.485f, 0.456f, 0.406f};
+    private static final float[] STD = {0.229f, 0.224f, 0.225f};
 
     /**
      * Creates the Model loader from the given repository.
@@ -64,10 +65,10 @@ public class SingleShotDetectionModelLoader
      * @param repository the repository to load the model from
      */
     public SingleShotDetectionModelLoader(Repository repository) {
-        super(repository, MRL.model(APPLICATION, GROUP_ID, ARTIFACT_ID), VERSION);
+        super(repository, MRL.model(APPLICATION, GROUP_ID, ARTIFACT_ID), VERSION, new PtModelZoo());
         FactoryImpl factory = new FactoryImpl();
 
-        factories.put(new Pair<>(BufferedImage.class, DetectedObjects.class), factory);
+        factories.put(new Pair<>(Image.class, DetectedObjects.class), factory);
         factories.put(
                 new Pair<>(Path.class, DetectedObjects.class),
                 new FileTranslatorFactory<>(factory));
@@ -86,12 +87,12 @@ public class SingleShotDetectionModelLoader
 
     /** {@inheritDoc} */
     @Override
-    public ZooModel<BufferedImage, DetectedObjects> loadModel(
+    public ZooModel<Image, DetectedObjects> loadModel(
             Map<String, String> filters, Device device, Progress progress)
             throws IOException, ModelNotFoundException, MalformedModelException {
-        Criteria<BufferedImage, DetectedObjects> criteria =
+        Criteria<Image, DetectedObjects> criteria =
                 Criteria.builder()
-                        .setTypes(BufferedImage.class, DetectedObjects.class)
+                        .setTypes(Image.class, DetectedObjects.class)
                         .optFilters(filters)
                         .optDevice(device)
                         .optProgress(progress)
@@ -99,14 +100,12 @@ public class SingleShotDetectionModelLoader
         return loadModel(criteria);
     }
 
-    private static final class FactoryImpl
-            implements TranslatorFactory<BufferedImage, DetectedObjects> {
+    private static final class FactoryImpl implements TranslatorFactory<Image, DetectedObjects> {
 
         /** {@inheritDoc} */
         @Override
         @SuppressWarnings("unchecked")
-        public Translator<BufferedImage, DetectedObjects> newInstance(
-                Map<String, Object> arguments) {
+        public Translator<Image, DetectedObjects> newInstance(Map<String, Object> arguments) {
             int width = ((Double) arguments.getOrDefault("width", 300)).intValue();
             int height = ((Double) arguments.getOrDefault("height", 300)).intValue();
             double threshold = (Double) arguments.getOrDefault("threshold", 0.4d);
@@ -145,18 +144,12 @@ public class SingleShotDetectionModelLoader
                 }
             }
 
-            Pipeline pipeline = new Pipeline();
-            pipeline.add(new Resize(width, height))
-                    .add(new ToTensor())
-                    .add(
-                            new Normalize(
-                                    new float[] {0.485f, 0.456f, 0.406f},
-                                    new float[] {0.229f, 0.224f, 0.225f}));
-
             return PtSSDTranslator.builder()
                     .setBoxes(figSize, featSize, steps, scale, aspectRatio)
-                    .setPipeline(pipeline)
-                    .setSynsetArtifactName("classes.txt")
+                    .addTransform(new Resize(width, height))
+                    .addTransform(new ToTensor())
+                    .addTransform(new Normalize(MEAN, STD))
+                    .optSynsetArtifactName("classes.txt")
                     .optThreshold((float) threshold)
                     .build();
         }

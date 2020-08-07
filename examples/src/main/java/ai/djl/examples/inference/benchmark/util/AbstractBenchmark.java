@@ -97,6 +97,10 @@ public abstract class AbstractBenchmark {
             DefaultParser parser = new DefaultParser();
             CommandLine cmd = parser.parse(options, args, null, false);
             Arguments arguments = parseArguments(cmd);
+            if (arguments.hasHelp()) {
+                printHelp("./gradlew benchmark --args='[OPTIONS]'", options);
+                return true;
+            }
 
             long init = System.nanoTime();
             String version = Engine.getInstance().getVersion();
@@ -118,7 +122,7 @@ public abstract class AbstractBenchmark {
             int numOfThreads = arguments.getThreads();
             int iteration = arguments.getIteration();
             if (this instanceof MultithreadedBenchmark) {
-                iteration = Math.max(iteration, numOfThreads * 2);
+                iteration = Math.max(iteration, 10) * numOfThreads;
             }
             while (!duration.isNegative()) {
                 Metrics metrics = new Metrics(); // Reset Metrics for each test loop.
@@ -131,10 +135,26 @@ public abstract class AbstractBenchmark {
                 }
                 long totalTime = System.currentTimeMillis() - begin;
 
-                logger.info("Inference result: {}", lastResult);
+                if (lastResult instanceof float[]) {
+                    float[] display = (float[]) lastResult;
+                    if (display.length > 3) {
+                        logger.info(
+                                "Inference result: [{}, {}, {} ...]",
+                                display[0],
+                                display[1],
+                                display[2]);
+                    } else {
+                        logger.info("Inference result: {}", lastResult);
+                    }
+                } else {
+                    logger.info("Inference result: {}", lastResult);
+                }
                 String throughput = String.format("%.2f", iteration * 1000d / totalTime);
                 logger.info(
-                        "Throughput: {}, {} iteration / {} ms.", throughput, iteration, totalTime);
+                        "Throughput: {}, completed {} iteration in {} ms.",
+                        throughput,
+                        iteration,
+                        totalTime);
 
                 if (metrics.hasMetric("LoadModel")) {
                     long loadModelTime =
@@ -213,10 +233,7 @@ public abstract class AbstractBenchmark {
             }
             return true;
         } catch (ParseException e) {
-            HelpFormatter formatter = new HelpFormatter();
-            formatter.setLeftPadding(1);
-            formatter.setWidth(120);
-            formatter.printHelp(e.getMessage(), options);
+            printHelp(e.getMessage(), options);
         } catch (Throwable t) {
             logger.error("Unexpected error", t);
         }
@@ -241,7 +258,7 @@ public abstract class AbstractBenchmark {
         String artifactId = arguments.getArtifactId();
         Class<?> input = arguments.getInputClass();
         Class<?> output = arguments.getOutputClass();
-        Shape shape = arguments.getInputShape();
+        Shape[] shapes = arguments.getInputShapes();
 
         Criteria.Builder<?, ?> builder =
                 Criteria.builder()
@@ -250,14 +267,18 @@ public abstract class AbstractBenchmark {
                         .optArtifactId(artifactId)
                         .optProgress(new ProgressBar());
 
-        if (shape != null) {
+        if (shapes != null) {
             builder.optTranslator(
                     new Translator() {
 
                         /** {@inheritDoc} */
                         @Override
                         public NDList processInput(TranslatorContext ctx, Object input) {
-                            return new NDList(ctx.getNDManager().ones(shape));
+                            NDList list = new NDList();
+                            for (Shape shape : shapes) {
+                                list.add(ctx.getNDManager().ones(shape));
+                            }
+                            return list;
                         }
 
                         /** {@inheritDoc} */
@@ -282,5 +303,12 @@ public abstract class AbstractBenchmark {
                 String.format("%.3f", delta / 1_000_000f));
         metrics.addMetric("LoadModel", delta);
         return model;
+    }
+
+    private void printHelp(String msg, Options options) {
+        HelpFormatter formatter = new HelpFormatter();
+        formatter.setLeftPadding(1);
+        formatter.setWidth(120);
+        formatter.printHelp(msg, options);
     }
 }

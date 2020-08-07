@@ -14,10 +14,10 @@ package ai.djl.test.mock;
 
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
+import ai.djl.ndarray.index.NDArrayIndexer;
 import ai.djl.ndarray.internal.NDArrayEx;
 import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
-import ai.djl.nn.pooling.PoolingConvention;
 import ai.djl.util.PairList;
 import java.util.List;
 
@@ -133,13 +133,13 @@ public class MockNDArrayEx implements NDArrayEx {
 
     /** {@inheritDoc} */
     @Override
-    public NDArray softrelu() {
+    public NDArray softPlus() {
         return null;
     }
 
     /** {@inheritDoc} */
     @Override
-    public NDArray softsign() {
+    public NDArray softSign() {
         return null;
     }
 
@@ -169,8 +169,7 @@ public class MockNDArrayEx implements NDArrayEx {
 
     /** {@inheritDoc} */
     @Override
-    public NDArray maxPool(
-            Shape kernel, Shape stride, Shape pad, PoolingConvention poolingConvention) {
+    public NDArray maxPool(Shape kernelShape, Shape stride, Shape padding, boolean ceilMode) {
         return null;
     }
 
@@ -182,24 +181,11 @@ public class MockNDArrayEx implements NDArrayEx {
 
     /** {@inheritDoc} */
     @Override
-    public NDArray sumPool(
-            Shape kernel, Shape stride, Shape pad, PoolingConvention poolingConvention) {
-        return null;
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public NDArray globalSumPool() {
-        return null;
-    }
-
-    /** {@inheritDoc} */
-    @Override
     public NDArray avgPool(
-            Shape kernel,
+            Shape kernelShape,
             Shape stride,
-            Shape pad,
-            PoolingConvention poolingConvention,
+            Shape padding,
+            boolean ceilMode,
             boolean countIncludePad) {
         return null;
     }
@@ -213,19 +199,26 @@ public class MockNDArrayEx implements NDArrayEx {
     /** {@inheritDoc} */
     @Override
     public NDArray lpPool(
-            Shape kernel,
-            Shape stride,
-            Shape pad,
-            PoolingConvention poolingConvention,
-            int pValue) {
+            float normType, Shape kernelShape, Shape stride, Shape padding, boolean ceilMode) {
         return null;
     }
 
     /** {@inheritDoc} */
     @Override
-    public NDArray globalLpPool(int pValue) {
+    public NDArray globalLpPool(float normType) {
         return null;
     }
+
+    /** {@inheritDoc} */
+    @Override
+    public void adagradUpdate(
+            NDList inputs,
+            NDList weights,
+            float learningRate,
+            float weightDecay,
+            float rescaleGrad,
+            float clipGrad,
+            float epsilon) {}
 
     /** {@inheritDoc} */
     @Override
@@ -254,6 +247,20 @@ public class MockNDArrayEx implements NDArrayEx {
 
     /** {@inheritDoc} */
     @Override
+    public void rmspropUpdate(
+            NDList inputs,
+            NDList weights,
+            float learningRate,
+            float weightDecay,
+            float rescaleGrad,
+            float clipGrad,
+            float rho,
+            float momentum,
+            float epsilon,
+            boolean centered) {}
+
+    /** {@inheritDoc} */
+    @Override
     public void sgdUpdate(
             NDList inputs,
             NDList weights,
@@ -267,28 +274,22 @@ public class MockNDArrayEx implements NDArrayEx {
     /** {@inheritDoc} */
     @Override
     public NDList convolution(
-            NDList inputs,
-            Shape kernel,
+            NDArray input,
+            NDArray weight,
+            NDArray bias,
             Shape stride,
-            Shape pad,
-            Shape dilate,
-            int numFilters,
-            int numGroups,
-            String layout,
-            boolean noBias,
-            PairList<String, Object> additional) {
+            Shape padding,
+            Shape dilation,
+            int groups) {
         return null;
     }
+
     /** {@inheritDoc} */
     @Override
-    public NDList fullyConnected(
-            NDList inputs,
-            long outChannels,
-            boolean flatten,
-            boolean noBias,
-            PairList<String, Object> additional) {
+    public NDList linear(NDArray input, NDArray weight, NDArray bias) {
         return null;
     }
+
     /** {@inheritDoc} */
     @Override
     public NDList embedding(
@@ -303,30 +304,28 @@ public class MockNDArrayEx implements NDArrayEx {
 
     /** {@inheritDoc} */
     @Override
-    public NDList prelu(NDList inputs, PairList<String, Object> additional) {
+    public NDList prelu(NDArray input, NDArray alpha) {
         return null;
     }
 
     /** {@inheritDoc} */
     @Override
-    public NDList dropout(
-            NDList inputs,
-            float probability,
-            int[] sharedAxes,
-            PairList<String, Object> additional) {
+    public NDList dropout(NDArray input, float rate, boolean training) {
         return null;
     }
 
     /** {@inheritDoc} */
     @Override
     public NDList batchNorm(
-            NDList inputs,
-            float epsilon,
-            float momentum,
+            NDArray input,
+            NDArray runningMean,
+            NDArray runningVar,
+            NDArray gamma,
+            NDArray beta,
             int axis,
-            boolean center,
-            boolean scale,
-            PairList<String, Object> additional) {
+            float momentum,
+            float eps,
+            boolean training) {
         return null;
     }
 
@@ -379,9 +378,34 @@ public class MockNDArrayEx implements NDArrayEx {
         return null;
     }
 
-    /** {@inheritDoc} */
     @Override
-    public NDArray pick(NDArray index, int axis, boolean keepDims, String mode) {
+    public NDArray randomFlipLeftRight() {
+        return null;
+    }
+
+    @Override
+    public NDArray randomFlipTopBottom() {
+        return null;
+    }
+
+    @Override
+    public NDArray randomBrightness(float brightness) {
+        return null;
+    }
+
+    @Override
+    public NDArray randomHue(float hue) {
+        return null;
+    }
+
+    @Override
+    public NDArray randomColorJitter(
+            float brightness, float contrast, float saturation, float hue) {
+        return null;
+    }
+
+    @Override
+    public NDArrayIndexer getIndexer() {
         return null;
     }
 

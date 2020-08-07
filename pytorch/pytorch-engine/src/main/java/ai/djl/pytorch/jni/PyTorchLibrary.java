@@ -42,6 +42,10 @@ final class PyTorchLibrary {
 
     native Pointer torchTo(Pointer handle, int dType, int[] device, boolean copy);
 
+    native Pointer torchToSparse(Pointer handle);
+
+    native Pointer torchToDense(Pointer handle);
+
     native Pointer tensorClone(Pointer handle);
 
     native Pointer torchEmpty(
@@ -52,6 +56,14 @@ final class PyTorchLibrary {
 
     native Pointer torchOnes(
             long[] shape, int dType, int layout, int[] device, boolean requiredGrad);
+
+    native Pointer torchFull(
+            long[] shape,
+            double fillValue,
+            int dType,
+            int layout,
+            int[] device,
+            boolean requiredGrad);
 
     native Pointer torchZerosLike(
             Pointer handle, int dType, int layout, int[] device, boolean requiredGrad);
@@ -91,9 +103,9 @@ final class PyTorchLibrary {
 
     native void torchMuli(Pointer self, Pointer other);
 
-    native Pointer torchDiv(Pointer self, Pointer other);
+    native Pointer torchTrueDivide(Pointer self, Pointer other);
 
-    native void torchDivi(Pointer self, Pointer other);
+    native void torchTrueDividei(Pointer self, Pointer other);
 
     native Pointer torchRemainder(Pointer self, Pointer other);
 
@@ -103,7 +115,19 @@ final class PyTorchLibrary {
 
     native void torchPowi(Pointer self, Pointer exponent);
 
+    native Pointer torchSign(Pointer self);
+
+    native void torchSigni(Pointer self);
+
     native Pointer torchMatmul(Pointer self, Pointer other);
+
+    native Pointer torchDot(Pointer self, Pointer other);
+
+    native Pointer torchMM(Pointer self, Pointer other);
+
+    native Pointer torchLogicalAnd(Pointer self, Pointer other);
+
+    native Pointer torchLogicalOr(Pointer self, Pointer other);
 
     native Pointer torchLogicalXor(Pointer self, Pointer other);
 
@@ -112,6 +136,8 @@ final class PyTorchLibrary {
     native Pointer torchReshape(Pointer handle, long[] shape);
 
     native Pointer torchSoftmax(Pointer handle, long dim, int dType);
+
+    native Pointer torchLogSoftmax(Pointer handle, long dim, int dType);
 
     native Pointer torchArgMax(Pointer handle);
 
@@ -129,6 +155,8 @@ final class PyTorchLibrary {
 
     native Pointer torchPermute(Pointer handle, long[] dims);
 
+    native Pointer torchFlip(Pointer handle, long[] dims);
+
     native Pointer torchTranspose(Pointer handle, long axis1, long axis2);
 
     native boolean contentEqual(Pointer handle1, Pointer handle2);
@@ -141,9 +169,25 @@ final class PyTorchLibrary {
             int[] device,
             boolean requiredGrad);
 
+    native Pointer torchIndex(
+            Pointer handle, long[] minIndices, long[] maxIndices, long[] stepIndices);
+
+    native void torchIndexPut(
+            Pointer handle,
+            Pointer valueHandle,
+            long[] minIndices,
+            long[] maxIndices,
+            long[] stepIndices);
+
+    native void torchSet(Pointer selfHandle, Pointer otherHandle);
+
     native Pointer torchSlice(Pointer handle, long dim, long start, long end, long step);
 
+    native Pointer torchGather(Pointer handle, Pointer index, long dim, boolean sparseGrad);
+
     native Pointer torchMaskedSelect(Pointer handle, Pointer maskHandle);
+
+    native void torchMaskedPut(Pointer handle, Pointer valueHandle, Pointer maskHandle);
 
     native void torchDeleteTensor(Pointer handle);
 
@@ -171,6 +215,12 @@ final class PyTorchLibrary {
 
     native Pointer torchSum(Pointer handle, long[] dim, boolean keepDim);
 
+    native Pointer torchProd(Pointer handle);
+
+    native Pointer torchProd(Pointer handle, long dim, boolean keepDim);
+
+    native Pointer torchCumSum(Pointer handle, long dim);
+
     native Pointer torchFlatten(Pointer handle, long startDim, long endDim);
 
     native Pointer[] torchSplit(Pointer handle, long size, long dim);
@@ -187,7 +237,13 @@ final class PyTorchLibrary {
 
     native Pointer torchCat(Pointer[] handles, long dim);
 
+    native Pointer torchRepeat(Pointer handle, long[] repeats);
+
+    native Pointer torchRepeatInterleave(Pointer handle, long repeat, long axis);
+
     native Pointer torchAbs(Pointer handle);
+
+    native Pointer torchSquare(Pointer self);
 
     native Pointer torchFloor(Pointer handle);
 
@@ -227,6 +283,10 @@ final class PyTorchLibrary {
 
     native Pointer torchTanh(Pointer handle);
 
+    native Pointer torchSigmoid(Pointer handle);
+
+    native Pointer torchWhere(Pointer handle, Pointer x, Pointer y);
+
     native Pointer torchAll(Pointer self);
 
     native Pointer torchAny(Pointer self);
@@ -248,6 +308,10 @@ final class PyTorchLibrary {
     native Pointer torchNeg(Pointer self);
 
     native void torchNegi(Pointer self);
+
+    native Pointer torchIsNaN(Pointer self);
+
+    native Pointer torchIsInf(Pointer self);
 
     native Pointer atNormal(
             double mean,
@@ -272,37 +336,89 @@ final class PyTorchLibrary {
 
     native Pointer torchUpsampleBilinear2d(Pointer handle, long[] shape, boolean alignCorners);
 
-    native Pointer torchNNLinear(
-            Pointer handle, Pointer weightHandle, Pointer biasHandle, boolean bias);
+    native Pointer torchNNLinear(Pointer handle, Pointer weightHandle, Pointer biasHandle);
 
     native Pointer torchNNRelu(Pointer handle);
 
+    native Pointer torchNNSoftPlus(Pointer handle);
+
+    native Pointer torchNNSoftSign(Pointer handle);
+
+    native Pointer torchNNLeakyRelu(Pointer handle, double negativeSlope);
+
+    native Pointer torchNNElu(Pointer handle, double alpha);
+
+    native Pointer torchNNSelu(Pointer handle);
+
+    native Pointer torchNNGelu(Pointer handle);
+
     native Pointer torchNNConvNd(
-            int dim,
             Pointer inputHandle,
             Pointer weightHandle,
             Pointer biasHandle,
             long[] stride,
-            long[] pad,
+            long[] padding,
             long[] dilation,
-            int numGroup,
-            boolean bias);
+            int groups);
+
+    native Pointer torchNNDropout(Pointer inputHandle, double probability, boolean isTrain);
 
     native Pointer torchNNBatchNorm(
             Pointer inputHandle,
-            Pointer weigthHandle,
-            Pointer biasHandle,
             Pointer runningMeanHandle,
             Pointer runningVarHandle,
-            boolean isTraining,
+            Pointer weigthHandle,
+            Pointer biasHandle,
+            boolean training,
             double momentum,
             double eps);
+
+    native Pointer torchNNAvgPool(
+            Pointer inputHandle,
+            long[] kernel,
+            long[] stride,
+            long[] pad,
+            boolean useCeil,
+            boolean countIncludePad);
+
+    native Pointer torchNNMaxPool(
+            Pointer inputHandle,
+            long[] kernelSize,
+            long[] stride,
+            long[] padding,
+            boolean ceilMode);
+
+    native Pointer torchNNAdaptiveAvgPool(Pointer inputHandle, long[] outputSize);
+
+    native Pointer torchNNAdaptiveMaxPool(Pointer inputHandle, long[] outputSize);
+
+    native Pointer torchNNLpPool(
+            Pointer inputHandle,
+            double normType,
+            long[] kernelSize,
+            long[] stride,
+            boolean ceilMode);
+
+    native boolean torchRequiresGrad(Pointer inputHandle);
+
+    native String torchGradFnName(Pointer inputHandle);
+
+    native void torchAttachGrad(Pointer inputHandle);
+
+    native Pointer torchGrad(Pointer inputHandle);
+
+    native Pointer torchDetachGrad(Pointer inputHandle);
+
+    native void torchBackward(
+            Pointer inputHandle, Pointer gradHandle, boolean keepGraph, boolean createGraph);
 
     native Pointer moduleLoad(String path, int[] device);
 
     native void moduleEval(Pointer handle);
 
-    native Pointer moduleForward(Pointer moduleHandle, Pointer[] arrayHandles);
+    native void moduleTrain(Pointer handle);
+
+    native Pointer moduleForward(Pointer moduleHandle, Pointer[] arrayHandles, boolean isTrain);
 
     native Pointer iValueCreateFromTensor(Pointer tensorHandle);
 
@@ -329,4 +445,29 @@ final class PyTorchLibrary {
     native boolean iValueIsMap(Pointer iValueHandle);
 
     native boolean iValueIsTuple(Pointer iValueHandle);
+
+    native void zeroGrad(Pointer handle);
+
+    native void adamUpdate(
+            Pointer weight,
+            Pointer grad,
+            Pointer mean,
+            Pointer variance,
+            float lr,
+            float wd,
+            float rescaleGrad,
+            float clipGrad,
+            float beta1,
+            float beta2,
+            float eps);
+
+    native void sgdUpdate(
+            Pointer weight,
+            Pointer grad,
+            Pointer state,
+            float lr,
+            float wd,
+            float rescaleGrad,
+            float clipGrad,
+            float momentum);
 }

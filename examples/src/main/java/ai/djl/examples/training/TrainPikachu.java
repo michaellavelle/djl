@@ -18,15 +18,14 @@ import ai.djl.Model;
 import ai.djl.basicdataset.PikachuDetection;
 import ai.djl.basicmodelzoo.cv.object_detection.ssd.SingleShotDetection;
 import ai.djl.examples.training.util.Arguments;
-import ai.djl.examples.training.util.TrainingUtils;
 import ai.djl.inference.Predictor;
 import ai.djl.metric.Metrics;
-import ai.djl.modality.cv.ImageVisualization;
+import ai.djl.modality.cv.Image;
+import ai.djl.modality.cv.ImageFactory;
 import ai.djl.modality.cv.MultiBoxDetection;
 import ai.djl.modality.cv.output.DetectedObjects;
 import ai.djl.modality.cv.transform.ToTensor;
 import ai.djl.modality.cv.translator.SingleShotDetectionTranslator;
-import ai.djl.modality.cv.util.BufferedImageUtils;
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.types.Shape;
@@ -34,25 +33,27 @@ import ai.djl.nn.Block;
 import ai.djl.nn.LambdaBlock;
 import ai.djl.nn.SequentialBlock;
 import ai.djl.training.DefaultTrainingConfig;
+import ai.djl.training.EasyTrain;
 import ai.djl.training.Trainer;
 import ai.djl.training.TrainingResult;
 import ai.djl.training.dataset.Dataset;
 import ai.djl.training.dataset.RandomAccessDataset;
 import ai.djl.training.evaluator.BoundingBoxError;
 import ai.djl.training.evaluator.SingleShotDetectionAccuracy;
+import ai.djl.training.listener.CheckpointsTrainingListener;
 import ai.djl.training.listener.TrainingListener;
 import ai.djl.training.loss.SingleShotDetectionLoss;
 import ai.djl.training.util.ProgressBar;
 import ai.djl.translate.Pipeline;
 import ai.djl.translate.TranslateException;
-import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
-import javax.imageio.ImageIO;
 import org.apache.commons.cli.ParseException;
 
 /**
@@ -66,18 +67,18 @@ public final class TrainPikachu {
 
     private TrainPikachu() {}
 
-    public static void main(String[] args) throws IOException, ParseException {
+    public static void main(String[] args) throws IOException, ParseException, TranslateException {
         TrainPikachu.runExample(args);
     }
 
-    public static TrainingResult runExample(String[] args) throws IOException, ParseException {
+    public static TrainingResult runExample(String[] args)
+            throws IOException, ParseException, TranslateException {
         Arguments arguments = Arguments.parseArgs(args);
 
-        try (Model model = Model.newInstance()) {
+        try (Model model = Model.newInstance("pikachu-ssd")) {
             model.setBlock(getSsdTrainBlock());
-
-            RandomAccessDataset pikachuDetectionTrain = getDataset(Dataset.Usage.TRAIN, arguments);
-            RandomAccessDataset pikachuDetectionTest = getDataset(Dataset.Usage.TEST, arguments);
+            RandomAccessDataset trainingSet = getDataset(Dataset.Usage.TRAIN, arguments);
+            RandomAccessDataset validateSet = getDataset(Dataset.Usage.TEST, arguments);
 
             DefaultTrainingConfig config = setupTrainingConfig(arguments);
 
@@ -86,53 +87,37 @@ public final class TrainPikachu {
 
                 Shape inputShape = new Shape(arguments.getBatchSize(), 3, 256, 256);
                 trainer.initialize(inputShape);
-                TrainingUtils.fit(
-                        trainer,
-                        arguments.getEpoch(),
-                        pikachuDetectionTrain,
-                        pikachuDetectionTest,
-                        arguments.getOutputDir(),
-                        "ssd");
 
-                TrainingResult result = trainer.getTrainingResult();
-                float accuracy = result.getValidateEvaluation("classAccuracy");
-                model.setProperty("Epoch", String.valueOf(result.getEpoch()));
-                model.setProperty("ClassAccuracy", String.format("%.5f", accuracy));
-                model.setProperty("Loss", String.format("%.5f", result.getValidateLoss()));
+                EasyTrain.fit(trainer, arguments.getEpoch(), trainingSet, validateSet);
 
-                model.save(Paths.get(arguments.getOutputDir()), "ssd");
-                return result;
+                return trainer.getTrainingResult();
             }
         }
     }
 
     public static int predict(String outputDir, String imageFile)
             throws IOException, MalformedModelException, TranslateException {
-        try (Model model = Model.newInstance()) {
+        try (Model model = Model.newInstance("pikachu-ssd")) {
             float detectionThreshold = 0.6f;
             // load parameters back to original training block
             model.setBlock(getSsdTrainBlock());
-            model.load(Paths.get(outputDir), "ssd");
+            model.load(Paths.get(outputDir));
             // append prediction logic at end of training block with parameter loaded
             Block ssdTrain = model.getBlock();
             model.setBlock(getSsdPredictBlock(ssdTrain));
             Path imagePath = Paths.get(imageFile);
-            Pipeline pipeline = new Pipeline(new ToTensor());
-            List<String> classes = new ArrayList<>();
-            classes.add("pikachu");
             SingleShotDetectionTranslator translator =
                     SingleShotDetectionTranslator.builder()
-                            .setPipeline(pipeline)
-                            .setClasses(classes)
+                            .addTransform(new ToTensor())
+                            .optSynset(Collections.singletonList("pikachu"))
                             .optThreshold(detectionThreshold)
                             .build();
-            try (Predictor<BufferedImage, DetectedObjects> predictor =
-                    model.newPredictor(translator)) {
-                BufferedImage image = BufferedImageUtils.fromFile(imagePath);
+            try (Predictor<Image, DetectedObjects> predictor = model.newPredictor(translator)) {
+                Image image = ImageFactory.getInstance().fromFile(imagePath);
                 DetectedObjects detectedObjects = predictor.predict(image);
-                ImageVisualization.drawBoundingBoxes(image, detectedObjects);
+                image.drawBoundingBoxes(detectedObjects);
                 Path out = Paths.get(outputDir).resolve("pikachu_output.png");
-                ImageIO.write(image, "png", out.toFile());
+                image.save(Files.newOutputStream(out), "png");
                 // return number of pikachu detected
                 return detectedObjects.getNumberOfObjects();
             }
@@ -155,11 +140,23 @@ public final class TrainPikachu {
     }
 
     private static DefaultTrainingConfig setupTrainingConfig(Arguments arguments) {
+        String outputDir = arguments.getOutputDir();
+        CheckpointsTrainingListener listener = new CheckpointsTrainingListener(outputDir);
+        listener.setSaveModelCallback(
+                trainer -> {
+                    TrainingResult result = trainer.getTrainingResult();
+                    Model model = trainer.getModel();
+                    float accuracy = result.getValidateEvaluation("classAccuracy");
+                    model.setProperty("ClassAccuracy", String.format("%.5f", accuracy));
+                    model.setProperty("Loss", String.format("%.5f", result.getValidateLoss()));
+                });
+
         return new DefaultTrainingConfig(new SingleShotDetectionLoss())
                 .addEvaluator(new SingleShotDetectionAccuracy("classAccuracy"))
                 .addEvaluator(new BoundingBoxError("boundingBoxError"))
                 .optDevices(Device.getDevices(arguments.getMaxGpus()))
-                .addTrainingListeners(TrainingListener.Defaults.logging(arguments.getOutputDir()));
+                .addTrainingListeners(TrainingListener.Defaults.logging(outputDir))
+                .addTrainingListeners(listener);
     }
 
     public static Block getSsdTrainBlock() {

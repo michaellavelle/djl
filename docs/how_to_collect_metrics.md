@@ -1,30 +1,41 @@
 # Metrics in DJL
 
 
-Deep Java Library (DJL) comes with utility classes to make it easy to capture performance metrics and other metrics during runtime. These metrics can be used to analyze and monitor inference, training performance, and stability. [Metrics](../api/src/main/java/ai/djl/metric/Metrics.java) is the class that enables collecting metrics information. It is built as a collection of individual [Metric](../api/src/main/java/ai/djl/metric/Metric.java) classes.
+Deep Java Library (DJL) comes with utility classes to make it easy to capture performance metrics
+and other metrics during runtime. These metrics can be used to analyze and monitor inference,
+training performance, and stability. [Metrics](https://javadoc.io/doc/ai.djl/api/latest/ai/djl/metric/Metrics.html)
+is the class that enables collecting metrics information. It is built as a collection of individual
+[Metric](https://javadoc.io/doc/ai.djl/api/latest/ai/djl/metric/Metric.html) classes.
 
-As a container for individual metrics classes, **Metrics** stores them as time series data so that metric-vs-timeline analysis could be performed. It also provides convenient statistical methods for getting aggregated information, such as _mean_ and _percentile_.
+As a container for individual metrics classes, **Metrics** stores them as time series data so that
+metric-vs-timeline analysis could be performed. It also provides convenient statistical methods for
+getting aggregated information, such as _mean_ and _percentile_.
 
-DJL uses the Metrics collection to store key performance indicators (KPIs) during inference and training runs. These KPIs include various latencies, CPU and GPU memory consumption, losses, etc. They can be accessed if you utilize built-in DJL classes in your applications. For examples of these built-in classes, see [Metrics out of the box](#metrics-out-of-the-box). 
-DJL also provides an easy way to keep track of your own metrics. For more information, see [User defined metrics](#user-defined-metrics).
+DJL uses the Metrics collection to store key performance indicators (KPIs) during inference and
+training runs. These KPIs include various latencies, CPU and GPU memory consumption, losses, etc.
+They can be accessed if you utilize built-in DJL classes in your applications. For examples of
+these built-in classes, see [Use metrics with DJL](#use-metrics-with-djl). 
+DJL also provides an easy way to keep track of your own metrics. For more information,
+see [User defined metrics](#user-defined-metrics).
 
 ## Use metrics with DJL
 Many DJL classes keep track of relevant quantitative and qualitative metrics. DJL provides easy access to these metrics.
 
-For example, if there is an application that uses Predictor to serve inference requests, the following code can be used to access mean and p90 latency of individual requests:
+For example, if there is an application that uses Predictor to serve inference requests, the
+following code can be used to access mean and p90 latency of individual requests:
 
 ```java
 // load the image in which objects need to be detected
 URL url = new URL("https://s3.amazonaws.com/images.pdpics.com/preview/3033-bicycle-rider.jpg");
-BufferedImage img = ImageIO.read(url);
+Image img = ImageFactory.getInstance().fromURL(url);
 
 // load the model for SingleShotDetector
 Map<String, String> criteria = new HashMap<>();
 criteria.put("size", "512");
 criteria.put("backbone", "resnet50");
 criteria.put("dataset", "voc");
-ZooModel<BufferedImage, DetectedObjects> model = MxModelZoo.SSD.loadModel(criteria);
-Predictor<BufferedImage, DetectedObjects> predictor = model.newPredictor();
+ZooModel<Image, DetectedObjects> model = MxModelZoo.SSD.loadModel(criteria);
+Predictor<Image, DetectedObjects> predictor = model.newPredictor();
 
 // instantiate metrics so that Predictor can record its performance
 Metrics metrics = new Metrics();
@@ -70,7 +81,8 @@ metrics.addMetric("end_to_end_latency", (end-begin) / 1_000_000f, "ms");
 ## More information
 
 For more examples of metrics use, as well as convenient utilities provided by DJL, see:
-- [MemoryTrainingListener](../api/src/main/java/ai/djl/training/listener/MemoryTrainingListener.java) for memory consumption metrics
-- [MxTrainer](../mxnet/mxnet-engine/src/main/java/ai/djl/mxnet/engine/MxTrainer.java) for metrics during training
-- [BasePredictor](../api/src/main/java/ai/djl/inference/BasePredictor.java) for metrics during inference
+
+- [MemoryTrainingListener](https://javadoc.io/doc/ai.djl/api/latest/ai/djl/training/listener/MemoryTrainingListener.html) for memory consumption metrics
+- [Trainer](https://javadoc.io/doc/ai.djl/api/latest/ai/djl/training/Trainer.html) for metrics during training
+- [Predictor](https://javadoc.io/doc/ai.djl/api/latest/ai/djl/inference/Predictor.html) for metrics during inference
 

@@ -16,6 +16,10 @@ import ai.djl.Device;
 import ai.djl.Model;
 import ai.djl.ndarray.NDManager;
 import ai.djl.training.GradientCollector;
+import ai.djl.training.LocalParameterServer;
+import ai.djl.training.ParameterServer;
+import ai.djl.training.optimizer.Optimizer;
+import java.util.Collection;
 import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.concurrent.ConcurrentHashMap;
@@ -25,9 +29,9 @@ import org.slf4j.LoggerFactory;
 /**
  * The {@code Engine} interface is the base of the provided implementation for DJL.
  *
- * <p>Any framework-specific functionality should be provided through this class. In general, it
- * should contain methods to detect information about the usable machine hardware and to create a
- * new {@link NDManager} and {@link Model}.
+ * <p>Any engine-specific functionality should be provided through this class. In general, it should
+ * contain methods to detect information about the usable machine hardware and to create a new
+ * {@link NDManager} and {@link Model}.
  *
  * @see EngineProvider
  */
@@ -45,14 +49,18 @@ public abstract class Engine {
         for (EngineProvider provider : loaders) {
             Engine engine = provider.getEngine();
             if (engine != null) {
+                logger.debug("Engine loaded from provider: {}", engine.getEngineName());
                 if (firstEngine == null) {
                     firstEngine = engine;
                 }
                 ALL_ENGINES.put(engine.getEngineName(), engine);
+            } else {
+                logger.warn("Failed to load engine from: {}", provider.getClass().getName());
             }
         }
 
         if (firstEngine == null) {
+            logger.debug("No engine found from EngineProvider");
             return null;
         }
 
@@ -94,6 +102,26 @@ public abstract class Engine {
     }
 
     /**
+     * Returns if the specified engine is available.
+     *
+     * @param engineName the name of Engine to check
+     * @return {@code true} if the specified engine is available
+     * @see EngineProvider
+     */
+    public static boolean hasEngine(String engineName) {
+        return ALL_ENGINES.containsKey(engineName);
+    }
+
+    /**
+     * Returns a Collection of engines that are loaded.
+     *
+     * @return {@code Collection<Engine>} that are supported
+     */
+    public static Collection<Engine> getAllEngines() {
+        return ALL_ENGINES.values();
+    }
+
+    /**
      * Returns the {@code Engine} with the given name.
      *
      * @param engineName the name of Engine to retrieve
@@ -109,9 +137,9 @@ public abstract class Engine {
     }
 
     /**
-     * Returns the version of the deep learning framework.
+     * Returns the version of the deep learning engine.
      *
-     * @return the version number of the deep learning framework
+     * @return the version number of the deep learning engine
      */
     public abstract String getVersion();
 
@@ -126,10 +154,11 @@ public abstract class Engine {
     /**
      * Constructs a new model.
      *
+     * @param name the model name
      * @param device the device that the model will be loaded onto
      * @return a new Model instance using the network defined in block
      */
-    public abstract Model newModel(Device device);
+    public abstract Model newModel(String name, Device device);
 
     /**
      * Creates a new top-level {@link NDManager}.
@@ -154,6 +183,16 @@ public abstract class Engine {
      * @return a new instance of {@link GradientCollector}
      */
     public abstract GradientCollector newGradientCollector();
+
+    /**
+     * Returns a new instance of {@link ParameterServer}.
+     *
+     * @param optimizer the optimizer to update
+     * @return a new instance of {@link ParameterServer}
+     */
+    public ParameterServer newParameterServer(Optimizer optimizer) {
+        return new LocalParameterServer(optimizer);
+    }
 
     /**
      * Seeds the random number generator in DJL Engine.

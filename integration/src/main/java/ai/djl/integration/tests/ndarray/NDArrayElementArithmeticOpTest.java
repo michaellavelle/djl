@@ -81,7 +81,7 @@ public class NDArrayElementArithmeticOpTest {
         float x2 = 2f;
         NDArray ndArray2 = manager.create(x2);
         NDArray result = arrayArithmeticOp.apply(ndArray2);
-        Assert.assertEquals(result.getFloat(), arithmeticOp.apply(x1, x2));
+        Assert.assertEquals(result.getFloat(), arithmeticOp.apply(x1, x2).floatValue());
         if (inplace) {
             Assert.assertSame(scalarNDArray, result);
         }
@@ -118,7 +118,7 @@ public class NDArrayElementArithmeticOpTest {
         float x2 = 3f;
         NDArray ndArray = manager.create(x1);
         NDArray result = arrayArithmeticOp.apply(x2, ndArray);
-        Assert.assertEquals(result.getFloat(), arithmeticOp.apply(x2, x1));
+        Assert.assertEquals(result.getFloat(), arithmeticOp.apply(x2, x1).floatValue());
         if (inplace) {
             Assert.assertSame(ndArray, result);
         } else {
@@ -131,7 +131,7 @@ public class NDArrayElementArithmeticOpTest {
 
     @Test
     public void testAddScalar() {
-        try (Model model = Model.newInstance()) {
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(Blocks.identityBlock());
             NDManager manager = model.getNDManager();
             NDArray lhs = manager.create(new float[] {1f, 2f, 3f, 4f});
@@ -349,7 +349,7 @@ public class NDArrayElementArithmeticOpTest {
 
     @Test
     public void testDot() {
-        try (Model model = Model.newInstance()) {
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(Blocks.identityBlock());
             NDManager manager = model.getNDManager();
             NDArray lhs = manager.create(new float[] {6, -9, -12, 15, 0, 4}, new Shape(2, 3));

@@ -19,8 +19,8 @@ import ai.djl.training.Trainer;
 import ai.djl.training.TrainingConfig;
 import ai.djl.training.dataset.Batch;
 import ai.djl.training.dataset.Dataset;
-import ai.djl.training.initializer.Initializer;
 import ai.djl.training.loss.Loss;
+import ai.djl.translate.TranslateException;
 import java.io.IOException;
 import org.testng.Assert;
 import org.testng.annotations.Test;
@@ -29,13 +29,12 @@ public class CocoTest {
 
     // CocoDetection dataset requires manual download so disable it
     @Test(enabled = false)
-    public void testCocoRemote() throws IOException {
+    public void testCocoRemote() throws IOException, TranslateException {
         CocoDetection coco =
                 CocoDetection.builder().optUsage(Dataset.Usage.TEST).setSampling(1, true).build();
-        coco.prepare();
-        try (Model model = Model.newInstance()) {
-            TrainingConfig config =
-                    new DefaultTrainingConfig(Loss.l2Loss()).optInitializer(Initializer.ONES);
+
+        try (Model model = Model.newInstance("model")) {
+            TrainingConfig config = new DefaultTrainingConfig(Loss.l2Loss());
             model.setBlock(Blocks.identityBlock());
             try (Trainer trainer = model.newTrainer(config)) {
                 for (Batch batch : trainer.iterateDataset(coco)) {

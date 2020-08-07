@@ -12,13 +12,11 @@
  */
 package ai.djl.pytorch.engine;
 
-import ai.djl.MalformedModelException;
 import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.NDManager;
 import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.BlockList;
-import ai.djl.nn.Parameter;
 import ai.djl.nn.ParameterList;
 import ai.djl.nn.SymbolBlock;
 import ai.djl.pytorch.jni.IValueUtils;
@@ -30,8 +28,6 @@ import ai.djl.training.initializer.Initializer;
 import ai.djl.util.PairList;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
-import java.io.IOException;
-import java.util.List;
 
 /**
  * {@code PtSymbolBlock} is the PyTorch implementation of {@link SymbolBlock}.
@@ -43,6 +39,7 @@ import java.util.List;
 public class PtSymbolBlock extends NativeResource implements SymbolBlock {
 
     private PtNDManager manager;
+    private boolean isTrain;
 
     /**
      * Constructs a {@code PtSymbolBlock}.
@@ -56,8 +53,9 @@ public class PtSymbolBlock extends NativeResource implements SymbolBlock {
     public PtSymbolBlock(PtNDManager manager, Pointer handle) {
         super(handle);
         this.manager = manager;
-        // Set for inference mode by default
-        JniUtils.enableInferenceMode(this);
+        manager.attach(getUid(), this);
+        // training mode is on by default
+        isTrain = true;
     }
 
     /** {@inheritDoc} */
@@ -65,8 +63,8 @@ public class PtSymbolBlock extends NativeResource implements SymbolBlock {
     public void close() {
         Pointer pointer = handle.getAndSet(null);
         if (pointer != null) {
+            JniUtils.deleteModule(pointer);
             manager.detach(getUid());
-            JniUtils.deleteModule(this);
             manager = null;
         }
     }
@@ -80,9 +78,20 @@ public class PtSymbolBlock extends NativeResource implements SymbolBlock {
     /** {@inheritDoc} */
     @Override
     public NDList forward(
-            ParameterStore parameterStore, NDList inputs, PairList<String, Object> params) {
+            ParameterStore parameterStore,
+            NDList inputs,
+            boolean training,
+            PairList<String, Object> params) {
         // TODO refactor the forward to not take ParameterStore
-        return IValueUtils.forward(this, inputs);
+        if (isTrain != training) {
+            isTrain = training;
+            if (isTrain) {
+                JniUtils.enableTrainingMode(this);
+            } else {
+                JniUtils.enableInferenceMode(this);
+            }
+        }
+        return IValueUtils.forward(this, inputs, training);
     }
 
     /** {@inheritDoc} */
@@ -100,7 +109,7 @@ public class PtSymbolBlock extends NativeResource implements SymbolBlock {
     /** {@inheritDoc} */
     @Override
     public Shape[] initialize(NDManager manager, DataType dataType, Shape... inputShapes) {
-        return new Shape[0];
+        throw new UnsupportedOperationException("Not supported for PyTorch");
     }
 
     /** {@inheritDoc} */
@@ -135,7 +144,7 @@ public class PtSymbolBlock extends NativeResource implements SymbolBlock {
 
     /** {@inheritDoc} */
     @Override
-    public List<Parameter> getDirectParameters() {
+    public ParameterList getDirectParameters() {
         throw new UnsupportedOperationException("Not implemented");
     }
 
@@ -159,14 +168,13 @@ public class PtSymbolBlock extends NativeResource implements SymbolBlock {
 
     /** {@inheritDoc} */
     @Override
-    public void saveParameters(DataOutputStream os) throws IOException {
+    public void saveParameters(DataOutputStream os) {
         throw new UnsupportedOperationException("Not supported for PyTorch");
     }
 
     /** {@inheritDoc} */
     @Override
-    public void loadParameters(NDManager manager, DataInputStream is)
-            throws IOException, MalformedModelException {
+    public void loadParameters(NDManager manager, DataInputStream is) {
         throw new UnsupportedOperationException("Not supported for PyTorch");
     }
 }

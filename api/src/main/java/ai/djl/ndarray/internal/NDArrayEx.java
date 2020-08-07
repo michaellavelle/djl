@@ -15,10 +15,10 @@ package ai.djl.ndarray.internal;
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.NDManager;
+import ai.djl.ndarray.index.NDArrayIndexer;
 import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.Activation;
-import ai.djl.nn.pooling.PoolingConvention;
 import ai.djl.util.PairList;
 import java.util.List;
 
@@ -157,9 +157,9 @@ public interface NDArrayEx {
 
     NDArray tanh();
 
-    NDArray softrelu();
+    NDArray softPlus();
 
-    NDArray softsign();
+    NDArray softSign();
 
     NDArray leakyRelu(float alpha);
 
@@ -181,31 +181,36 @@ public interface NDArrayEx {
     // Pooling Operations
     ////////////////////////////////////////
 
-    NDArray maxPool(Shape kernel, Shape stride, Shape pad, PoolingConvention poolingConvention);
+    NDArray maxPool(Shape kernelShape, Shape stride, Shape padding, boolean ceilMode);
 
     NDArray globalMaxPool();
 
-    NDArray sumPool(Shape kernel, Shape stride, Shape pad, PoolingConvention poolingConvention);
-
-    NDArray globalSumPool();
-
     NDArray avgPool(
-            Shape kernel,
+            Shape kernelShape,
             Shape stride,
-            Shape pad,
-            PoolingConvention poolingConvention,
+            Shape padding,
+            boolean ceilMode,
             boolean countIncludePad);
 
     NDArray globalAvgPool();
 
     NDArray lpPool(
-            Shape kernel, Shape stride, Shape pad, PoolingConvention poolingConvention, int pValue);
+            float normType, Shape kernelShape, Shape stride, Shape padding, boolean ceilMode);
 
-    NDArray globalLpPool(int pValue);
+    NDArray globalLpPool(float normType);
 
     ////////////////////////////////////////
     // Optimizer
     ////////////////////////////////////////
+
+    void adagradUpdate(
+            NDList inputs,
+            NDList weights,
+            float learningRate,
+            float weightDecay,
+            float rescaleGrad,
+            float clipGrad,
+            float epsilon);
 
     void adamUpdate(
             NDList inputs,
@@ -228,6 +233,18 @@ public interface NDArrayEx {
             float clipGrad,
             float momentum);
 
+    void rmspropUpdate(
+            NDList inputs,
+            NDList weights,
+            float learningRate,
+            float weightDecay,
+            float rescaleGrad,
+            float clipGrad,
+            float rho,
+            float momentum,
+            float epsilon,
+            boolean centered);
+
     void sgdUpdate(
             NDList inputs,
             NDList weights,
@@ -242,43 +259,16 @@ public interface NDArrayEx {
     // Neural network
     ////////////////////////////////////////
 
-    /**
-     * Computes N-D convolution on (N+2)-D input.
-     *
-     * @param inputs the inputs to the convolution operation. Msut include input data, weight
-     *     parameter matrix, and bias parameter
-     * @param kernel the convolution kernel size: (w,), (h, w) or (d, h, w)
-     * @param stride the convolution stride: (w,), (h, w) or (d, h, w). Defaults to 1 for each
-     *     dimension
-     * @param pad the zero pad for convolution: (w,), (h, w) or (d, h, w). Defaults to no padding
-     * @param dilate the convolution dilate: (w,), (h, w) or (d, h, w). Defaults to 1 for each
-     *     dimension
-     * @param numFilters the convolution filter(channel) number
-     * @param numGroups the number of group partitions. Defaults to 1
-     * @param layout the layout for input, output and weight. Empty for default layout: NCW for 1d,
-     *     NCHW for 2d and NCDHW for 3d. NHWC and NDHWC are only supported on GPU
-     * @param noBias whether to disable bias parameter. Defaults to false
-     * @param additional additional parameters
-     * @return the output of the convolution operation
-     */
     NDList convolution(
-            NDList inputs,
-            Shape kernel,
+            NDArray input,
+            NDArray weight,
+            NDArray bias,
             Shape stride,
-            Shape pad,
-            Shape dilate,
-            int numFilters,
-            int numGroups,
-            String layout,
-            boolean noBias,
-            PairList<String, Object> additional);
+            Shape padding,
+            Shape dilation,
+            int groups);
 
-    NDList fullyConnected(
-            NDList inputs,
-            long outChannels,
-            boolean flatten,
-            boolean noBias,
-            PairList<String, Object> additional);
+    NDList linear(NDArray input, NDArray weight, NDArray bias);
 
     NDList embedding(
             NDList inputs,
@@ -288,22 +278,20 @@ public interface NDArrayEx {
             DataType dataType,
             PairList<String, Object> additional);
 
-    NDList prelu(NDList inputs, PairList<String, Object> additional);
+    NDList prelu(NDArray input, NDArray alpha);
 
-    NDList dropout(
-            NDList inputs,
-            float probability,
-            int[] sharedAxes,
-            PairList<String, Object> additional);
+    NDList dropout(NDArray input, float rate, boolean training);
 
     NDList batchNorm(
-            NDList inputs,
-            float epsilon,
-            float momentum,
+            NDArray input,
+            NDArray runningMean,
+            NDArray runningVar,
+            NDArray gamma,
+            NDArray beta,
             int axis,
-            boolean center,
-            boolean scale,
-            PairList<String, Object> additional);
+            float momentum,
+            float eps,
+            boolean training);
 
     /**
      * Applies recurrent layers to input data. Currently, vanilla RNN, LSTM and GRU are implemented,
@@ -394,19 +382,26 @@ public interface NDArrayEx {
     }
 
     default NDArray toTensor() {
-        NDArray array = getArray();
-        int dim = array.getShape().dimension();
-        if (dim == 3) {
-            array = array.expandDims(0);
+        try (NDManager subManager = getArray().getManager().newSubManager()) {
+            NDArray array = getArray();
+            NDArray result = array;
+            result.attach(subManager);
+            int dim = result.getShape().dimension();
+            if (dim == 3) {
+                result = result.expandDims(0);
+            }
+            result = result.div(255.0).transpose(0, 3, 1, 2);
+            if (dim == 3) {
+                result = result.squeeze(0);
+            }
+            // The network by default takes float32
+            if (!result.getDataType().equals(DataType.FLOAT32)) {
+                result = result.toType(DataType.FLOAT32, false);
+            }
+            array.attach(subManager.getParentManager());
+            result.attach(subManager.getParentManager());
+            return result;
         }
-        array = array.div(255.0).transpose(0, 3, 1, 2);
-        if (dim == 3) {
-            array = array.squeeze(0);
-        }
-        // The network by default takes float32
-        return (!array.getDataType().equals(DataType.FLOAT32))
-                ? array.toType(DataType.FLOAT32, false)
-                : array;
     }
 
     NDArray resize(int width, int height);
@@ -428,40 +423,31 @@ public interface NDArrayEx {
         return array.get(sb.toString());
     }
 
+    // TODO: default can be implemented by using np.flip
+    NDArray randomFlipLeftRight();
+
+    // TODO: default can be implemented by using np.flip
+    NDArray randomFlipTopBottom();
+
+    // TODO: add TorchVision support
+    NDArray randomBrightness(float brightness);
+
+    // TODO: add TorchVision support
+    NDArray randomHue(float hue);
+
+    // TODO: add TorchVision support
+    NDArray randomColorJitter(float brightness, float contrast, float saturation, float hue);
+
     ////////////////////////////////////////
     // Miscellaneous
     ////////////////////////////////////////
 
     /**
-     * Picks elements from an input array according to the input indices along the given axis.
+     * Returns an {@link NDArrayIndexer}.
      *
-     * @param index the index array
-     * @param axis the axis used to pick the elements. Negative values means indexing happens from
-     *     right to left. If it is `None`, the elements in the index w.r.t the flattened input will
-     *     be picked.
-     * @param keepDims If true, the axis where we pick the elements is left in the result as
-     *     dimension with size one.
-     * @param mode Specify how out-of-bound indices behave. "clip" means clip to the range. So, if
-     *     all indices mentioned are too large, they are replaced by the index that addresses the
-     *     last element along an axis. "wrap" means to wrap around.
-     * @return a copy of the array
+     * @return an {@link NDArrayIndexer}
      */
-    NDArray pick(NDArray index, int axis, boolean keepDims, String mode);
-
-    /**
-     * Picks elements from an input array according to the input indices along the given axis.
-     *
-     * @param index the index array
-     * @param axis the axis used to pick the elements. Negative values mean indexing happen from
-     *     right to left. If it is `None`, the elements in the index w.r.t the flattened input will
-     *     be picked.
-     * @param keepDims If true, the axis where we pick the elements is left in the result as
-     *     dimension with size one.
-     * @return a copy of the array
-     */
-    default NDArray pick(NDArray index, int axis, boolean keepDims) {
-        return pick(index, axis, keepDims, "clip");
-    }
+    NDArrayIndexer getIndexer();
 
     /**
      * Returns elements chosen from the {@code NDArray} or the other {@code NDArray} depending on

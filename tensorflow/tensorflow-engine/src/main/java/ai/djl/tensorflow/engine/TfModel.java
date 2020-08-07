@@ -21,6 +21,7 @@ import ai.djl.nn.Block;
 import ai.djl.training.Trainer;
 import ai.djl.training.TrainingConfig;
 import ai.djl.translate.Translator;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -42,9 +43,11 @@ public class TfModel extends BaseModel {
     /**
      * Constructs a new Model on a given device.
      *
+     * @param name the model name
      * @param device the device the model should be located on
      */
-    TfModel(Device device) {
+    TfModel(String name, Device device) {
+        super(name);
         device = Device.defaultIfNull(device);
         properties = new ConcurrentHashMap<>();
         manager = TfNDManager.getSystemManager().newSubManager(device);
@@ -53,8 +56,19 @@ public class TfModel extends BaseModel {
 
     /** {@inheritDoc} */
     @Override
-    public void load(Path modelPath, String modelName, Map<String, Object> options) {
+    public void load(Path modelPath, String prefix, Map<String, Object> options)
+            throws FileNotFoundException {
         modelDir = modelPath.toAbsolutePath();
+        if (prefix == null) {
+            prefix = modelName;
+        }
+        Path exportDir = findModleDir(prefix);
+        if (exportDir == null) {
+            exportDir = findModleDir("saved_model.pb");
+            if (exportDir == null) {
+                throw new FileNotFoundException("No TensorFlow model found in: " + modelDir);
+            }
+        }
         String[] tags = null;
         ConfigProto proto = null;
         RunOptions runOptions = null;
@@ -68,7 +82,7 @@ public class TfModel extends BaseModel {
         }
 
         SavedModelBundle.Loader loader =
-                SavedModelBundle.loader(modelDir.toString()).withTags(tags);
+                SavedModelBundle.loader(exportDir.toString()).withTags(tags);
         if (proto != null) {
             loader.withConfigProto(proto);
         }
@@ -77,12 +91,28 @@ public class TfModel extends BaseModel {
         }
 
         SavedModelBundle bundle = loader.load();
-        block = new TfSymbolBlock(manager, bundle);
+        block = new TfSymbolBlock(bundle);
+    }
+
+    private Path findModleDir(String prefix) {
+        Path path = modelDir.resolve(prefix);
+        if (!Files.exists(path)) {
+            return null;
+        }
+        if (Files.isRegularFile(path)) {
+            return modelDir;
+        } else if (Files.isDirectory(path)) {
+            Path file = path.resolve("saved_model.pb");
+            if (Files.exists(file) && Files.isRegularFile(file)) {
+                return path;
+            }
+        }
+        return null;
     }
 
     /** {@inheritDoc} */
     @Override
-    public void save(Path modelPath, String modelName) {
+    public void save(Path modelPath, String newModelName) {
         throw new UnsupportedOperationException("Not supported for TensorFlow Engine");
     }
 
@@ -147,6 +177,8 @@ public class TfModel extends BaseModel {
     @Override
     public void close() {
         manager.close();
-        block.clear();
+        if (block != null) {
+            block.clear();
+        }
     }
 }

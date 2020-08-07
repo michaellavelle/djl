@@ -2,32 +2,27 @@
 
 This folder contains examples and documentation for the Deep Java Library (DJL) project.
 
-## Modules
-
-- [Core API](../api/README.md) - Engine-agnostic API
-- [Basic Dataset](../basicdataset/README.md) - Built-in datasets
-- [Model Zoo](../model-zoo/README.md) - Built-in engine-agnostic model zoo
-- [Repository API](../repository/README.md) - Repository utilities to build the model zoo and dataset
-#### MXNet
-- [MXNet Engine](../mxnet/mxnet-engine/README.md) - MXNet Engine implementation
-- [MXNet Model Zoo](../mxnet/mxnet-model-zoo/README.md) - MXNet symbolic model zoo
-- [Pytorch Engine](../pytorch/pytorch-engine/README.md) - Pytorch Engine implementation
-- [Pytorch Model Zoo](../pytorch/pytorch-model-zoo/README.md) - PyTorch TorchScript model zoo
-- [TensorFlow Engine](../tensorflow/tensorflow-engine/README.md) - TensorFlow Engine implementation
-- [TensorFlow Model Zoo](../tensorflow/tensorflow-model-zoo/README.md) - TensorFlow SavedModel model zoo
-
-#### PyTorch
-- [PyTorch Engine](../pytorc/pytorch-engine/README.md) - PyTorch Engine implementation
-- [PyTorch Model Zoo](../pytorc/pytorch-model-zoo/README.md) - PyTorch TorchScript model zoo
-
 ## [JavaDoc API Reference](https://javadoc.djl.ai/)
 
-## [Jupyter notebook tutorials](../jupyter)
+## [Demos](https://djl.ai/website/demo.html)
 
-- **[Beginner Jupyter Tutorial](../jupyter/tutorial)**
+## Cheat sheet
+
+- [How to load a model](load_model.md)
+- [How to collect metrics](how_to_collect_metrics.md)
+- [How to use a dataset](development/how_to_use_dataset.md)
+- [How to set log level](development/configure_logging.md)
+- [Dependency Management](development/dependency_management.md)
+- [Cache Management](development/cache_management.md)
+- [Memory Management](development/memory_management.md)
+- [Troubleshooting](development/troubleshooting.md)
+
+## [Jupyter notebook tutorials](../jupyter/README.md)
+
+- **[Beginner Jupyter Tutorial](../jupyter/tutorial/README.md)**
 - [Run object detection with model zoo](../jupyter/object_detection_with_model_zoo.ipynb)
 - [Load pre-trained PyTorch model](../jupyter/load_pytorch_model.ipynb)
-- [Load pre-trained MXNet model](../jupyter/load_mxnet_model.ipynb)
+- [Load pre-trained Apache MXNet model](../jupyter/load_mxnet_model.ipynb)
 - [Transfer learning example](../jupyter/transfer_learning_on_cifar10.ipynb)
 - [Question answering example](../jupyter/BERTQA.ipynb)
 
@@ -44,11 +39,36 @@ This folder contains examples and documentation for the Deep Java Library (DJL) 
 - [Pose estimation example](../examples/docs/pose_estimation.md)
 - [Action recognition example](../examples/docs/action_recognition.md)
 
-## Cheat sheet
+## Engine Documentation
 
-- [How to collect metrics](how_to_collect_metrics.md)
-- [How to use a dataset](development/how_to_use_dataset.md)
+### [Apache MXNet](../mxnet/README.md)
+
+- [Apache MXNet Gluon Importing](mxnet/how_to_convert_your_model_to_symbol.md) - Apache MXNet Gluon Importing
+
+### [PyTorch](../pytorch/README.md)
+
+- [PyTorch Importing](pytorch/how_to_convert_your_model_to_torchscript.md) - Import TorchScript model
+- [Pytorch Inference Optimization](pytorch/how_to_optimize_inference_performance.md) - Improve inference performance
+
+
+### [TensorFlow](../tensorflow/README.md)
+
+- [Keras Imporint](tensorflow/how_to_import_keras_models_in_DJL.md)
+
+### [ONNX Runtime](../onnxruntime/onnxruntime-engine/README.md)
+
+- [Hybrid Engine Operations](onnxruntime/hybrid_engine.md) - Using a second Engine for supplemental API support
+
+## Extensions and utilities
+
+- [Android support](../android/README.md)
+- [AWS S3 support](../extensions/aws-ai/README.md)
+- [Hadoop support](../extensions/hadoop/README.md)
 
 ## [Contributor Documentation](development/README.md)
+
+- [Setup development environment](development/setup.md)
+- [Development guideline](development/development_guideline.md)
+- [Release process](development/release_process.md)
 
 ## [FAQ](faq.md)

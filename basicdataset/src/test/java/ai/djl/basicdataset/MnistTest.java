@@ -21,8 +21,8 @@ import ai.djl.training.Trainer;
 import ai.djl.training.TrainingConfig;
 import ai.djl.training.dataset.Batch;
 import ai.djl.training.dataset.Dataset;
-import ai.djl.training.initializer.Initializer;
 import ai.djl.training.loss.Loss;
+import ai.djl.translate.TranslateException;
 import java.io.IOException;
 import org.testng.Assert;
 import org.testng.annotations.Test;
@@ -30,12 +30,10 @@ import org.testng.annotations.Test;
 public class MnistTest {
 
     @Test
-    public void testMnistLocal() throws IOException {
-        TrainingConfig config =
-                new DefaultTrainingConfig(Loss.softmaxCrossEntropyLoss())
-                        .optInitializer(Initializer.ONES);
+    public void testMnistLocal() throws IOException, TranslateException {
+        TrainingConfig config = new DefaultTrainingConfig(Loss.softmaxCrossEntropyLoss());
 
-        try (Model model = Model.newInstance()) {
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(Blocks.identityBlock());
 
             NDManager manager = model.getNDManager();
@@ -48,7 +46,6 @@ public class MnistTest {
                             .setSampling(32, true)
                             .build();
 
-            mnist.prepare();
             try (Trainer trainer = model.newTrainer(config)) {
                 for (Batch batch : trainer.iterateDataset(mnist)) {
                     Assert.assertEquals(batch.getData().size(), 1);
@@ -60,12 +57,10 @@ public class MnistTest {
     }
 
     @Test
-    public void testMnistRemote() throws IOException {
-        TrainingConfig config =
-                new DefaultTrainingConfig(Loss.softmaxCrossEntropyLoss())
-                        .optInitializer(Initializer.ONES);
+    public void testMnistRemote() throws IOException, TranslateException {
+        TrainingConfig config = new DefaultTrainingConfig(Loss.softmaxCrossEntropyLoss());
 
-        try (Model model = Model.newInstance()) {
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(Blocks.identityBlock());
 
             NDManager manager = model.getNDManager();
@@ -76,7 +71,6 @@ public class MnistTest {
                             .setSampling(32, true)
                             .build();
 
-            mnist.prepare();
             try (Trainer trainer = model.newTrainer(config)) {
                 for (Batch batch : trainer.iterateDataset(mnist)) {
                     Assert.assertEquals(batch.getData().size(), 1);

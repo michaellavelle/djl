@@ -11,11 +11,13 @@ configurations {
 }
 
 dependencies {
-    api "org.bytedeco:javacpp:1.5.2"
+    api "org.bytedeco:javacpp:1.5.3"
+    api "com.google.protobuf:protobuf-java:3.8.0"
     api "org.tensorflow:tensorflow-core-api:0.1.0-SNAPSHOT"
     api "org.tensorflow:tensorflow-tools:0.1.0-SNAPSHOT"
 
-    exclusion "org.bytedeco:javacpp:1.5.2"
+    exclusion "org.bytedeco:javacpp:1.5.3"
+    exclusion "com.google.protobuf:protobuf-java:3.8.0"
 }
 
 jar {
@@ -30,8 +32,8 @@ publishing {
     publications {
         maven(MavenPublication) {
             pom {
-                name = "TensorFlow 2.0 core api"
-                description = "TensorFlow 2.0 core api"
+                name = "DJL release for TensorFlow core api"
+                description = "Deep Java Library (DJL) release for TensorFlow core api"
                 url = "http://www.djl.ai/tensorflow/${project.name}"
 
                 withXml {

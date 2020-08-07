@@ -13,20 +13,17 @@
 package ai.djl.nn.recurrent;
 
 import ai.djl.Device;
-import ai.djl.MalformedModelException;
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDArrays;
 import ai.djl.ndarray.NDList;
-import ai.djl.ndarray.NDManager;
 import ai.djl.ndarray.internal.NDArrayEx;
+import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.Block;
 import ai.djl.nn.Parameter;
 import ai.djl.training.ParameterStore;
 import ai.djl.util.PairList;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
+import ai.djl.util.Preconditions;
 
 /**
  * {@code LSTM} is an implementation of recurrent neural networks which applies Long Short-Term
@@ -45,11 +42,10 @@ import java.io.IOException;
  */
 public class LSTM extends RecurrentBlock {
 
-    private static final byte VERSION = 2;
-
     private boolean clipLstmState;
     private double lstmStateClipMin;
     private double lstmStateClipMax;
+    private NDArray beginStateCell;
 
     /**
      * Creates an LSTM block.
@@ -68,7 +64,10 @@ public class LSTM extends RecurrentBlock {
     /** {@inheritDoc} */
     @Override
     public NDList forward(
-            ParameterStore parameterStore, NDList inputs, PairList<String, Object> params) {
+            ParameterStore parameterStore,
+            NDList inputs,
+            boolean training,
+            PairList<String, Object> params) {
         inputs = opInputs(parameterStore, inputs);
         NDArrayEx ex = inputs.head().getNDArrayInternal();
 
@@ -103,9 +102,23 @@ public class LSTM extends RecurrentBlock {
         NDList result = new NDList(output.head().transpose(1, 0, 2));
         if (stateOutputs) {
             result.add(output.get(1));
+            result.add(output.get(2));
         }
-        resetBeginState();
+        resetBeginStates();
         return result;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void setBeginStates(NDList beginStates) {
+        this.beginState = beginStates.get(0);
+        this.beginStateCell = beginStates.get(1);
+    }
+
+    @Override
+    protected void resetBeginStates() {
+        beginState = null;
+        beginStateCell = null;
     }
 
     /** {@inheritDoc} */
@@ -114,12 +127,12 @@ public class LSTM extends RecurrentBlock {
         validateInputSize(inputs);
         long batchSize = inputs.head().getShape().get(0);
         inputs = updateInputLayoutToTNC(inputs);
-        NDArray head = inputs.head();
+        NDArray head = inputs.singletonOrThrow();
         Device device = head.getDevice();
 
         NDList result = new NDList(head);
         try (NDList parameterList = new NDList()) {
-            for (Parameter parameter : parameters) {
+            for (Parameter parameter : parameters.values()) {
                 NDArray array = parameterStore.getValue(parameter, device);
                 parameterList.add(array.flatten());
             }
@@ -130,39 +143,16 @@ public class LSTM extends RecurrentBlock {
         Shape stateShape = new Shape(numStackedLayers * numDirections, batchSize, stateSize);
         if (beginState != null) {
             result.add(beginState);
+            result.add(beginStateCell);
         } else {
-            result.add(inputs.head().getManager().zeros(stateShape));
+            // TODO manager creates the NDArray with the wrong device
+            result.add(head.getManager().zeros(stateShape, DataType.FLOAT32, device));
+            result.add(head.getManager().zeros(stateShape, DataType.FLOAT32, device));
         }
-        result.add(inputs.head().getManager().zeros(stateShape));
         if (useSequenceLength) {
             result.add(inputs.get(1));
         }
         return result;
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public void saveParameters(DataOutputStream os) throws IOException {
-        os.writeByte(VERSION);
-        saveInputShapes(os);
-        for (Parameter parameter : parameters) {
-            parameter.save(os);
-        }
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public void loadParameters(NDManager manager, DataInputStream is)
-            throws IOException, MalformedModelException {
-        byte version = is.readByte();
-        if (version == VERSION) {
-            readInputShapes(is);
-        } else if (version != 1) {
-            throw new MalformedModelException("Unsupported encoding version: " + version);
-        }
-        for (Parameter parameter : parameters) {
-            parameter.load(manager, is);
-        }
     }
 
     /**
@@ -203,9 +193,9 @@ public class LSTM extends RecurrentBlock {
          * @return the {@link LSTM} block
          */
         public LSTM build() {
-            if (stateSize == -1 || numStackedLayers == -1) {
-                throw new IllegalArgumentException("Must set stateSize and numStackedLayers");
-            }
+            Preconditions.checkArgument(
+                    stateSize > 0 && numStackedLayers > 0,
+                    "Must set stateSize and numStackedLayers");
             return new LSTM(this);
         }
     }

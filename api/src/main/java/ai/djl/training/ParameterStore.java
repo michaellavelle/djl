@@ -66,29 +66,12 @@ public class ParameterStore {
 
     /** Updates all the mirrored parameters. */
     public void updateAllParameters() {
-        int priority = 0;
         for (Map.Entry<String, ParameterData> entry : parameterMap.entrySet()) {
             String parameterId = entry.getKey();
             ParameterData data = entry.getValue();
             if (data.requireGradient()) {
-                NDArray[] grads =
-                        data.getNDArrays()
-                                .stream()
-                                .map(NDArray::getGradient)
-                                .toArray(NDArray[]::new);
-                parameterServer.push(parameterId, grads, -priority);
-                ++priority;
-            }
-        }
-
-        priority = 0;
-        for (Map.Entry<String, ParameterData> entry : parameterMap.entrySet()) {
-            String parameterId = entry.getKey();
-            ParameterData data = entry.getValue();
-            if (data.requireGradient()) {
-                NDArray[] values = data.toArray();
-                parameterServer.pull(parameterId, values, -priority);
-                ++priority;
+                NDArray[] params = data.toArray();
+                parameterServer.update(parameterId, params);
             }
         }
     }
@@ -101,6 +84,10 @@ public class ParameterStore {
      * @return the value of the mirrored parameter on the device
      */
     public NDArray getValue(Parameter parameter, Device device) {
+        // for those optional parameters, they might not be in the ParameterStore
+        if (parameter == null) {
+            return null;
+        }
         String parameterId = parameter.getId();
         int index = deviceMap.get(device);
         ParameterData data =
@@ -121,7 +108,11 @@ public class ParameterStore {
                     } else {
                         arrays[i] = array.toDevice(dev, true);
                         arrays[i].attach(manager);
-                        arrays[i].attachGradient();
+                        // some parameter doesn't require grad
+                        // for example running_mean in BatchNorm
+                        if (parameter.requireGradient()) {
+                            arrays[i].attachGradient();
+                        }
                     }
                     data.add(arrays[i]);
                 }
@@ -129,7 +120,11 @@ public class ParameterStore {
                 if (copy || !array.getDevice().equals(device)) {
                     array = array.toDevice(device, true);
                     array.attach(manager);
-                    array.attachGradient();
+                    // some parameter doesn't require grad
+                    // for example running_mean in BatchNorm
+                    if (parameter.requireGradient()) {
+                        array.attachGradient();
+                    }
                 }
                 data.add(array);
             }

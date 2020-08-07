@@ -17,8 +17,10 @@ import ai.djl.Device;
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.internal.NDArrayEx;
-import ai.djl.training.optimizer.learningrate.LearningRateTracker;
+import ai.djl.training.tracker.Tracker;
+import ai.djl.util.Preconditions;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -30,7 +32,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class Nag extends Optimizer {
 
-    private LearningRateTracker learningRateTracker;
+    private Tracker learningRateTracker;
     private float momentum;
     private Map<String, Map<Device, NDArray>> momentumStates;
 
@@ -50,7 +52,7 @@ public class Nag extends Optimizer {
     @Override
     public void update(String parameterId, NDArray weight, NDArray grad) {
         // TODO: Support Mixed precision Sparse
-        float newLearningRate = learningRateTracker.getNewLearningRate(updateCount(parameterId));
+        float newLearningRate = learningRateTracker.getNewValue(updateCount(parameterId));
         float weightDecay = getWeightDecay();
         NDList inputs;
         if (momentum != 0f) {
@@ -76,18 +78,18 @@ public class Nag extends Optimizer {
     /** The Builder to construct an {@link Nag} object. */
     public static final class Builder extends OptimizerBuilder<Builder> {
 
-        LearningRateTracker learningRateTracker;
+        Tracker learningRateTracker;
         float momentum;
 
         Builder() {}
 
         /**
-         * Sets the {@link LearningRateTracker} for this optimizer.
+         * Sets the {@link Tracker} for this optimizer.
          *
-         * @param learningRateTracker the {@link LearningRateTracker} to be set
+         * @param learningRateTracker the {@link Tracker} to be set
          * @return this {@code Builder}
          */
-        public Builder setLearningRateTracker(LearningRateTracker learningRateTracker) {
+        public Builder setLearningRateTracker(Tracker learningRateTracker) {
             this.learningRateTracker = learningRateTracker;
             return this;
         }
@@ -115,12 +117,8 @@ public class Nag extends Optimizer {
          * @return the {@link Nag} block
          */
         public Nag build() {
-            if (learningRateTracker == null) {
-                throw new IllegalArgumentException("No lrTracker set");
-            }
-            if (momentum == 0) {
-                throw new IllegalArgumentException("The momentum should be set");
-            }
+            Objects.requireNonNull(learningRateTracker, "No lrTracker set");
+            Preconditions.checkArgument(momentum != 0, "The momentum should be set");
             return new Nag(this);
         }
     }

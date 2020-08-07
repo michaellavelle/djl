@@ -32,6 +32,12 @@ public class Application {
         return path;
     }
 
+    /** {@inheritDoc} */
+    @Override
+    public String toString() {
+        return path.replace('/', '.').toUpperCase();
+    }
+
     /** The common set of applications for computer vision. */
     public interface CV {
         Application IMAGE_CLASSIFICATION = new Application("cv/image_classification");
@@ -49,5 +55,11 @@ public class Application {
         Application SENTIMENT_ANALYSIS = new Application("nlp/sentiment_analysis");
         Application WORD_EMBEDDING = new Application("nlp/word_embedding");
         Application MACHINE_TRANSLATION = new Application("nlp/machine_translation");
+        Application MULTIPLE_CHOICE = new Application("nlp/multiple_choice");
+    }
+
+    /** The common set of applications for tabular data. */
+    public interface Tabular {
+        Application LINEAR_REGRESSION = new Application("tabular/linear_regression");
     }
 }

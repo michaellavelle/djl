@@ -13,22 +13,17 @@
 package ai.djl.modality.nlp;
 
 import ai.djl.MalformedModelException;
-import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.NDManager;
 import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.AbstractBlock;
 import ai.djl.nn.Block;
-import ai.djl.nn.BlockList;
-import ai.djl.nn.Parameter;
 import ai.djl.training.ParameterStore;
 import ai.djl.util.PairList;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.util.Collections;
-import java.util.List;
 
 /**
  * {@code Decoder} is an abstract block that be can used as decoder in encoder-decoder architecture.
@@ -36,6 +31,7 @@ import java.util.List;
  * class, and facilitate implementing encoder-decoder models for different tasks and inputs.
  */
 public abstract class Decoder extends AbstractBlock {
+
     protected Block block;
 
     /**
@@ -43,48 +39,33 @@ public abstract class Decoder extends AbstractBlock {
      * you are planning to use pre-trained embeddings that don't need further training.
      *
      * @param block the block to be used to decode
+     * @param version the version to use for parameter and metadata serialization
      */
-    public Decoder(Block block) {
-        this.block = block;
+    public Decoder(byte version, Block block) {
+        super(version);
+        this.block = addChildBlock("Block", block);
     }
 
     /**
      * Sets the state of the encoder as the initial state of the decoder.
      *
-     * @param encoderState the state of the encoder
+     * @param encoderStates the states of the encoder
      */
-    public abstract void initState(NDArray encoderState);
+    public abstract void initState(NDList encoderStates);
 
     /** {@inheritDoc} */
     @Override
     public NDList forward(
-            ParameterStore parameterStore, NDList inputs, PairList<String, Object> params) {
-        return block.forward(parameterStore, inputs, params);
+            ParameterStore parameterStore,
+            NDList inputs,
+            boolean training,
+            PairList<String, Object> params) {
+        return block.forward(parameterStore, inputs, training, params);
     }
 
-    /** {@inheritDoc} */
     @Override
-    public Shape[] initialize(NDManager manager, DataType dataType, Shape... inputShapes) {
-        beforeInitialize(inputShapes);
-        return block.initialize(manager, dataType, inputShapes);
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public BlockList getChildren() {
-        return block.getChildren();
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public List<Parameter> getDirectParameters() {
-        return Collections.emptyList();
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public Shape getParameterShape(String name, Shape[] inputShapes) {
-        throw new IllegalArgumentException("Decoder has no parameters");
+    public void initializeChildBlocks(NDManager manager, DataType dataType, Shape... inputShapes) {
+        block.initialize(manager, dataType, inputShapes);
     }
 
     /** {@inheritDoc} */

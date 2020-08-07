@@ -14,13 +14,15 @@ package ai.djl.basicdataset;
 
 import ai.djl.basicdataset.utils.TextData;
 import ai.djl.basicdataset.utils.TextData.Configuration;
+import ai.djl.engine.Engine;
 import ai.djl.modality.nlp.SimpleVocabulary;
 import ai.djl.modality.nlp.Vocabulary;
 import ai.djl.modality.nlp.embedding.EmbeddingException;
 import ai.djl.modality.nlp.embedding.TextEmbedding;
 import ai.djl.modality.nlp.embedding.TrainableWordEmbedding;
-import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.NDManager;
+import ai.djl.repository.Repository;
+import ai.djl.repository.Resource;
 import ai.djl.training.dataset.RandomAccessDataset;
 import java.util.List;
 
@@ -38,6 +40,11 @@ public abstract class TextDataset extends RandomAccessDataset {
 
     protected TextData sourceTextData;
     protected TextData targetTextData;
+    protected NDManager manager;
+    protected Usage usage;
+
+    protected Resource resource;
+    protected boolean prepared;
 
     /**
      * Creates a new instance of {@link RandomAccessDataset} with the given necessary
@@ -53,12 +60,8 @@ public abstract class TextDataset extends RandomAccessDataset {
         targetTextData =
                 new TextData(
                         TextData.getDefaultConfiguration().update(builder.targetConfiguration));
-    }
-
-    protected NDList embedText(long index, NDManager manager, boolean source)
-            throws EmbeddingException {
-        TextData textData = source ? sourceTextData : targetTextData;
-        return textData.embedText(index, manager);
+        manager = builder.manager;
+        usage = builder.usage;
     }
 
     /**
@@ -79,9 +82,33 @@ public abstract class TextDataset extends RandomAccessDataset {
      * @param source whether to get source or target vocabulary
      * @return the {@link SimpleVocabulary}
      */
-    public SimpleVocabulary getVocabulary(boolean source) {
+    public Vocabulary getVocabulary(boolean source) {
         TextData textData = source ? sourceTextData : targetTextData;
         return textData.getVocabulary();
+    }
+
+    /**
+     * Gets the raw textual input.
+     *
+     * @param index the index of the text input
+     * @param source whether to get text from source or target
+     * @return the raw text
+     */
+    public String getRawText(long index, boolean source) {
+        TextData textData = source ? sourceTextData : targetTextData;
+        return textData.getRawText(index);
+    }
+
+    /**
+     * Gets the processed textual input.
+     *
+     * @param index the index of the text input
+     * @param source whether to get text from source or target
+     * @return the processed text
+     */
+    public List<String> getProcessedText(long index, boolean source) {
+        TextData textData = source ? sourceTextData : targetTextData;
+        return textData.getProcessedText(index);
     }
 
     /**
@@ -90,17 +117,32 @@ public abstract class TextDataset extends RandomAccessDataset {
      *
      * @param newTextData list of all unprocessed sentences in the dataset
      * @param source whether the text data provided is source or target
+     * @throws EmbeddingException if there is an error while embedding input
      */
-    protected void preprocess(List<String> newTextData, boolean source) {
+    protected void preprocess(List<String> newTextData, boolean source) throws EmbeddingException {
         TextData textData = source ? sourceTextData : targetTextData;
-        textData.preprocess(newTextData);
+        textData.preprocess(
+                manager, newTextData.subList(0, (int) Math.min(limit, newTextData.size())));
     }
 
     /** Abstract Builder that helps build a {@link TextDataset}. */
     public abstract static class Builder<T extends Builder<T>> extends BaseBuilder<T> {
 
-        private TextData.Configuration sourceConfiguration;
-        private TextData.Configuration targetConfiguration;
+        TextData.Configuration sourceConfiguration = new Configuration();
+        TextData.Configuration targetConfiguration = new Configuration();
+        NDManager manager = Engine.getInstance().newBaseManager();
+
+        protected Repository repository;
+        protected String groupId;
+        protected String artifactId;
+        protected Usage usage;
+
+        /** Constructs a new builder. */
+        Builder() {
+            repository = BasicDatasets.REPOSITORY;
+            groupId = BasicDatasets.GROUP_ID;
+            usage = Usage.TRAIN;
+        }
 
         /**
          * Sets the {@link TextData.Configuration} to use for the source text data.
@@ -121,6 +163,67 @@ public abstract class TextDataset extends RandomAccessDataset {
          */
         public T setTargetConfiguration(Configuration targetConfiguration) {
             this.targetConfiguration = targetConfiguration;
+            return self();
+        }
+
+        /**
+         * Sets the optional manager for the dataset (default follows engine default).
+         *
+         * @param manager the manager
+         * @return this builder
+         */
+        public T optManager(NDManager manager) {
+            this.manager = manager.newSubManager();
+            return self();
+        }
+
+        /**
+         * Sets the optional usage.
+         *
+         * @param usage the usage
+         * @return this builder
+         */
+        public T optUsage(Usage usage) {
+            this.usage = usage;
+            return self();
+        }
+
+        /**
+         * Sets the optional repository.
+         *
+         * @param repository the repository
+         * @return this builder
+         */
+        public T optRepository(Repository repository) {
+            this.repository = repository;
+            return self();
+        }
+
+        /**
+         * Sets optional groupId.
+         *
+         * @param groupId the groupId}
+         * @return this builder
+         */
+        public T optGroupId(String groupId) {
+            this.groupId = groupId;
+            return self();
+        }
+
+        /**
+         * Sets the optional artifactId.
+         *
+         * @param artifactId the artifactId
+         * @return this builder
+         */
+        public T optArtifactId(String artifactId) {
+            if (artifactId.contains(":")) {
+                String[] tokens = artifactId.split(":");
+                groupId = tokens[0];
+                this.artifactId = tokens[1];
+            } else {
+                this.artifactId = artifactId;
+            }
             return self();
         }
     }

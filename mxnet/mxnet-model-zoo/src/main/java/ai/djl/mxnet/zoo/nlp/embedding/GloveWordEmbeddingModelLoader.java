@@ -17,6 +17,7 @@ import ai.djl.Application.NLP;
 import ai.djl.Device;
 import ai.djl.MalformedModelException;
 import ai.djl.Model;
+import ai.djl.modality.nlp.SimpleVocabulary;
 import ai.djl.modality.nlp.embedding.TrainableWordEmbedding;
 import ai.djl.modality.nlp.embedding.WordEmbedding;
 import ai.djl.mxnet.zoo.MxModelZoo;
@@ -30,6 +31,7 @@ import ai.djl.repository.zoo.BaseModelLoader;
 import ai.djl.repository.zoo.Criteria;
 import ai.djl.repository.zoo.ModelNotFoundException;
 import ai.djl.repository.zoo.ZooModel;
+import ai.djl.translate.Batchifier;
 import ai.djl.translate.Translator;
 import ai.djl.translate.TranslatorContext;
 import ai.djl.translate.TranslatorFactory;
@@ -57,7 +59,7 @@ public class GloveWordEmbeddingModelLoader extends BaseModelLoader<NDList, NDLis
      * @param repository the repository to load the model from
      */
     public GloveWordEmbeddingModelLoader(Repository repository) {
-        super(repository, MRL.model(APPLICATION, GROUP_ID, ARTIFACT_ID), VERSION);
+        super(repository, MRL.model(APPLICATION, GROUP_ID, ARTIFACT_ID), VERSION, new MxModelZoo());
         factories.put(new Pair<>(String.class, NDList.class), new FactoryImpl());
     }
 
@@ -67,25 +69,37 @@ public class GloveWordEmbeddingModelLoader extends BaseModelLoader<NDList, NDLis
         return APPLICATION;
     }
 
-    /** {@inheritDoc} */
-    @Override
-    protected Model createModel(Device device, Artifact artifact, Map<String, Object> arguments)
+    private Model customGloveBlock(Model model, Artifact artifact, Map<String, Object> arguments)
             throws IOException {
-        Model model = Model.newInstance(device);
         List<String> idxToToken =
                 Utils.readLines(
-                        repository.openStream(artifact.getFiles().get("idx_to_token"), null));
+                        resource.getRepository()
+                                .openStream(artifact.getFiles().get("idx_to_token"), null));
         TrainableWordEmbedding wordEmbedding =
                 TrainableWordEmbedding.builder()
                         .setEmbeddingSize(
                                 Integer.parseInt(artifact.getProperties().get("dimensions")))
-                        .setItems(idxToToken)
+                        .setVocabulary(new SimpleVocabulary(idxToToken))
                         .optUnknownToken((String) arguments.get("unknownToken"))
-                        .optUseDefault(false)
+                        .optUseDefault(true)
+                        .optSparseGrad(false)
                         .build();
         model.setBlock(wordEmbedding);
         model.setProperty("unknownToken", (String) arguments.get("unknownToken"));
         return model;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    protected Model createModel(
+            String name,
+            Device device,
+            Artifact artifact,
+            Map<String, Object> arguments,
+            String engine)
+            throws IOException {
+        Model model = Model.newInstance(name, device, engine);
+        return customGloveBlock(model, artifact, arguments);
     }
 
     /** {@inheritDoc} */
@@ -126,7 +140,7 @@ public class GloveWordEmbeddingModelLoader extends BaseModelLoader<NDList, NDLis
         /** {@inheritDoc} */
         @Override
         @SuppressWarnings("unchecked")
-        public void prepare(NDManager manager, Model model) throws IOException {
+        public void prepare(NDManager manager, Model model) {
             try {
                 embedding = (Embedding<String>) model.getBlock();
             } catch (ClassCastException e) {
@@ -136,18 +150,24 @@ public class GloveWordEmbeddingModelLoader extends BaseModelLoader<NDList, NDLis
 
         /** {@inheritDoc} */
         @Override
-        public NDList processOutput(TranslatorContext ctx, NDList list) throws Exception {
+        public NDList processOutput(TranslatorContext ctx, NDList list) {
             return list;
         }
 
         /** {@inheritDoc} */
         @Override
-        public NDList processInput(TranslatorContext ctx, String input) throws Exception {
+        public NDList processInput(TranslatorContext ctx, String input) {
             if (embedding.hasItem(input)) {
-                return new NDList(embedding.embed(ctx.getNDManager(), input));
+                return new NDList(ctx.getNDManager().create(embedding.embed(input)));
             } else {
-                return new NDList(embedding.embed(ctx.getNDManager(), unknownToken));
+                return new NDList(ctx.getNDManager().create(embedding.embed(unknownToken)));
             }
+        }
+
+        /** {@inheritDoc} */
+        @Override
+        public Batchifier getBatchifier() {
+            return Batchifier.STACK;
         }
     }
 }

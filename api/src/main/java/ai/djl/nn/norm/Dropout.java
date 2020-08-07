@@ -13,19 +13,16 @@
 package ai.djl.nn.norm;
 
 import ai.djl.MalformedModelException;
+import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.NDManager;
 import ai.djl.ndarray.internal.NDArrayEx;
 import ai.djl.ndarray.types.Shape;
-import ai.djl.nn.Parameter;
-import ai.djl.nn.ParameterBlock;
+import ai.djl.nn.AbstractBlock;
 import ai.djl.training.ParameterStore;
 import ai.djl.util.PairList;
 import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
-import java.util.Collections;
-import java.util.List;
 
 /**
  * A dropout layer benefits a network by allowing some units (neurons), and hence their respective
@@ -53,24 +50,25 @@ import java.util.List;
  * 2-3 times since different simulated multiple networks are trained for each iteration, thus
  * resulting in noisy parameter updates.
  */
-public class Dropout extends ParameterBlock {
+public class Dropout extends AbstractBlock {
 
     private static final byte VERSION = 2;
 
-    private float probability;
-    private int[] sharedAxes;
+    private float rate;
 
     Dropout(Builder builder) {
-        probability = builder.probability;
-        sharedAxes = builder.sharedAxes;
+        super(VERSION);
+        rate = builder.rate;
     }
 
     /** {@inheritDoc} */
     @Override
     public NDList forward(
-            ParameterStore parameterStore, NDList inputs, PairList<String, Object> params) {
-        NDArrayEx ex = inputs.singletonOrThrow().getNDArrayInternal();
-        return ex.dropout(inputs, probability, sharedAxes, params);
+            ParameterStore parameterStore,
+            NDList inputs,
+            boolean training,
+            PairList<String, Object> params) {
+        return dropout(inputs.singletonOrThrow(), rate, training);
     }
 
     /** {@inheritDoc} */
@@ -81,33 +79,55 @@ public class Dropout extends ParameterBlock {
 
     /** {@inheritDoc} */
     @Override
-    public List<Parameter> getDirectParameters() {
-        return Collections.emptyList();
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public Shape getParameterShape(String name, Shape[] inputShapes) {
-        throw new IllegalArgumentException("Dropout has no parameters");
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public void saveParameters(DataOutputStream os) throws IOException {
-        os.writeByte(VERSION);
-        saveInputShapes(os);
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public void loadParameters(NDManager manager, DataInputStream is)
+    public void loadMetadata(byte version, DataInputStream is)
             throws IOException, MalformedModelException {
-        byte version = is.readByte();
         if (version == VERSION) {
             readInputShapes(is);
         } else if (version != 1) {
             throw new MalformedModelException("Unsupported encoding version: " + version);
         }
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public String toString() {
+        return "Dropout()";
+    }
+
+    /**
+     * Applies Dropout to the input.
+     *
+     * @param input input to apply dropout
+     * @return output
+     */
+    public static NDList dropout(NDArray input) {
+        NDArrayEx ex = input.getNDArrayInternal();
+        return ex.dropout(input, 0.5f, true);
+    }
+
+    /**
+     * Applies Dropout to the input.
+     *
+     * @param input input to apply dropout
+     * @param rate Fraction of the input units to drop
+     * @return output
+     */
+    public static NDList dropout(NDArray input, float rate) {
+        NDArrayEx ex = input.getNDArrayInternal();
+        return ex.dropout(input, rate, true);
+    }
+
+    /**
+     * Applies Dropout to the input.
+     *
+     * @param input input to apply dropout
+     * @param rate Fraction of the input units to drop
+     * @param training apply dropout if true
+     * @return output
+     */
+    public static NDList dropout(NDArray input, float rate, boolean training) {
+        NDArrayEx ex = input.getNDArrayInternal();
+        return ex.dropout(input, rate, training);
     }
 
     /**
@@ -122,8 +142,7 @@ public class Dropout extends ParameterBlock {
     /** The Builder to construct a {@link Dropout} type of {@link ai.djl.nn.Block}. */
     public static final class Builder {
 
-        private float probability = 0.5f;
-        private int[] sharedAxes = {};
+        private float rate = 0.5f;
 
         Builder() {}
 
@@ -131,22 +150,11 @@ public class Dropout extends ParameterBlock {
          * Sets the probability or the fraction of the input that gets dropped out during training
          * time. Defaults to 0.5.
          *
-         * @param probability fraction of the input that gets dropped out during training
+         * @param rate fraction of the input that gets dropped out during training
          * @return this Builder
          */
-        public Builder optProbability(float probability) {
-            this.probability = probability;
-            return this;
-        }
-
-        /**
-         * Sets the axes for variational dropout kernel.
-         *
-         * @param sharedAxes the axes for variational dropout kernel
-         * @return this Builder
-         */
-        public Builder optSharedAxes(int[] sharedAxes) {
-            this.sharedAxes = sharedAxes;
+        public Builder optRate(float rate) {
+            this.rate = rate;
             return this;
         }
 

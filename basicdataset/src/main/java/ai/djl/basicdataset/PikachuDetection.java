@@ -13,9 +13,9 @@
 package ai.djl.basicdataset;
 
 import ai.djl.Application.CV;
+import ai.djl.modality.cv.Image;
+import ai.djl.modality.cv.ImageFactory;
 import ai.djl.modality.cv.transform.ToTensor;
-import ai.djl.modality.cv.util.BufferedImageUtils;
-import ai.djl.modality.cv.util.NDImageUtils.Flag;
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.NDManager;
@@ -23,12 +23,12 @@ import ai.djl.ndarray.types.Shape;
 import ai.djl.repository.Artifact;
 import ai.djl.repository.MRL;
 import ai.djl.repository.Repository;
-import ai.djl.repository.dataset.ZooDataset;
+import ai.djl.repository.Resource;
 import ai.djl.training.dataset.RandomAccessDataset;
 import ai.djl.training.dataset.Record;
 import ai.djl.translate.Pipeline;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
+import ai.djl.util.JsonUtils;
+import ai.djl.util.Progress;
 import com.google.gson.reflect.TypeToken;
 import java.io.IOException;
 import java.io.Reader;
@@ -41,32 +41,27 @@ import java.util.List;
 import java.util.Map;
 
 /** Pikachu image detection dataset that contains multiple Pikachus in each image. */
-public class PikachuDetection extends RandomAccessDataset implements ZooDataset {
+public class PikachuDetection extends RandomAccessDataset {
+
     private static final String VERSION = "1.0";
     private static final String ARTIFACT_ID = "pikachu";
-    private static final Gson GSON =
-            new GsonBuilder()
-                    .setDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
-                    .setPrettyPrinting()
-                    .create();
 
-    private Repository repository;
-    private Artifact artifact;
     private Usage usage;
-    private boolean prepared;
-    private Flag flag;
-
+    private Image.Flag flag;
     private List<Path> imagePaths;
     private List<float[]> labels;
 
+    private Resource resource;
+    private boolean prepared;
+
     protected PikachuDetection(Builder builder) {
         super(builder);
-        repository = builder.repository;
-        artifact = builder.artifact;
         usage = builder.usage;
         flag = builder.flag;
         imagePaths = new ArrayList<>();
         labels = new ArrayList<>();
+        MRL mrl = MRL.dataset(CV.OBJECT_DETECTION, builder.groupId, builder.artifactId);
+        resource = new Resource(builder.repository, mrl, VERSION);
     }
 
     /**
@@ -80,51 +75,15 @@ public class PikachuDetection extends RandomAccessDataset implements ZooDataset 
 
     /** {@inheritDoc} */
     @Override
-    public MRL getMrl() {
-        return MRL.dataset(CV.OBJECT_DETECTION, BasicDatasets.GROUP_ID, ARTIFACT_ID);
-    }
+    public void prepare(Progress progress) throws IOException {
+        if (prepared) {
+            return;
+        }
 
-    /** {@inheritDoc} */
-    @Override
-    public Repository getRepository() {
-        return repository;
-    }
+        Artifact artifact = resource.getDefaultArtifact();
+        resource.prepare(artifact, progress);
 
-    /** {@inheritDoc} */
-    @Override
-    public Artifact getArtifact() {
-        return artifact;
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public Usage getUsage() {
-        return usage;
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public boolean isPrepared() {
-        return prepared;
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public void setPrepared(boolean prepared) {
-        this.prepared = prepared;
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public void useDefaultArtifact() throws IOException {
-        artifact = repository.resolve(getMrl(), VERSION, null);
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public void prepareData(Usage usage) throws IOException {
-        Path root = repository.getResourceDirectory(artifact);
-
+        Path root = resource.getRepository().getResourceDirectory(artifact);
         Path usagePath;
         switch (usage) {
             case TRAIN:
@@ -141,7 +100,7 @@ public class PikachuDetection extends RandomAccessDataset implements ZooDataset 
         Path indexFile = usagePath.resolve("index.file");
         try (Reader reader = Files.newBufferedReader(indexFile)) {
             Type mapType = new TypeToken<Map<String, List<Float>>>() {}.getType();
-            Map<String, List<Float>> metadata = GSON.fromJson(reader, mapType);
+            Map<String, List<Float>> metadata = JsonUtils.GSON.fromJson(reader, mapType);
             for (Map.Entry<String, List<Float>> entry : metadata.entrySet()) {
                 float[] labelArray = new float[5];
                 String imgName = entry.getKey();
@@ -150,8 +109,6 @@ public class PikachuDetection extends RandomAccessDataset implements ZooDataset 
                 labelArray[0] = label.get(4);
 
                 // Bounding box labels
-                // Labels contain in format (Xmin, Ymin, Xmax, Ymax). We need it in (Xmin, Ymax,
-                // Xmax, Ymin)
                 labelArray[1] = label.get(5);
                 labelArray[2] = label.get(6);
                 labelArray[3] = label.get(7);
@@ -160,14 +117,18 @@ public class PikachuDetection extends RandomAccessDataset implements ZooDataset 
                 labels.add(labelArray);
             }
         }
+        prepared = true;
     }
 
     /** {@inheritDoc} */
     @Override
-    public Record get(NDManager manager, long index) throws IOException {
+    protected Record get(NDManager manager, long index) throws IOException {
         int idx = Math.toIntExact(index);
         NDList d =
-                new NDList(BufferedImageUtils.readFileToArray(manager, imagePaths.get(idx), flag));
+                new NDList(
+                        ImageFactory.getInstance()
+                                .fromFile(imagePaths.get(idx))
+                                .toNDArray(manager, flag));
         NDArray label = manager.create(labels.get(idx));
         NDList l = new NDList(label.reshape(new Shape(1).addAll(label.getShape())));
         return new Record(d, l);
@@ -183,16 +144,18 @@ public class PikachuDetection extends RandomAccessDataset implements ZooDataset 
     public static final class Builder extends BaseBuilder<Builder> {
 
         Repository repository;
-        Artifact artifact;
+        String groupId;
+        String artifactId;
         Usage usage;
-        Flag flag;
+        Image.Flag flag;
 
         /** Constructs a new builder. */
         Builder() {
             repository = BasicDatasets.REPOSITORY;
+            groupId = BasicDatasets.GROUP_ID;
+            artifactId = ARTIFACT_ID;
             usage = Usage.TRAIN;
-            flag = Flag.COLOR;
-            pipeline = new Pipeline(new ToTensor());
+            flag = Image.Flag.COLOR;
         }
 
         /** {@inheritDoc} */
@@ -224,14 +187,31 @@ public class PikachuDetection extends RandomAccessDataset implements ZooDataset 
         }
 
         /**
-         * Sets the optional artifact.
+         * Sets optional groupId.
          *
-         * @param artifact the artifact
+         * @param groupId the groupId}
          * @return this builder
          */
-        public Builder optArtifact(Artifact artifact) {
-            this.artifact = artifact;
-            return self();
+        public Builder optGroupId(String groupId) {
+            this.groupId = groupId;
+            return this;
+        }
+
+        /**
+         * Sets the optional artifactId.
+         *
+         * @param artifactId the artifactId
+         * @return this builder
+         */
+        public Builder optArtifactId(String artifactId) {
+            if (artifactId.contains(":")) {
+                String[] tokens = artifactId.split(":");
+                groupId = tokens[0];
+                this.artifactId = tokens[1];
+            } else {
+                this.artifactId = artifactId;
+            }
+            return this;
         }
 
         /**
@@ -240,7 +220,7 @@ public class PikachuDetection extends RandomAccessDataset implements ZooDataset 
          * @param flag the color mode flag
          * @return this builder
          */
-        public Builder optFlag(Flag flag) {
+        public Builder optFlag(Image.Flag flag) {
             this.flag = flag;
             return self();
         }
@@ -251,6 +231,9 @@ public class PikachuDetection extends RandomAccessDataset implements ZooDataset 
          * @return the {@link PikachuDetection}
          */
         public PikachuDetection build() {
+            if (pipeline == null) {
+                pipeline = new Pipeline(new ToTensor());
+            }
             return new PikachuDetection(this);
         }
     }

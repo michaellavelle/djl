@@ -6,22 +6,28 @@ plugins {
 group = "ai.djl.pytorch"
 apply from: file("${rootProject.projectDir}/tools/gradle/cpp-formatter.gradle")
 
-def VERSION = "1.4.0"
+def VERSION = "1.5.0"
 boolean isRelease = project.hasProperty("release") || project.hasProperty("staging")
-version = VERSION + (isRelease ? "" : "-SNAPSHOT")
+boolean isCentOS = project.hasProperty("centos")
+// fixme: reomve isCentOS when new version comes
+version = VERSION + (isCentOS ? "-post0" : "") + (isRelease ? "" : "-SNAPSHOT")
 def BINARY_ROOT = "${project.buildDir}/download"
 
-def downloadBuild(String os, String flavor) {
+def downloadBuild(String os, String flavor, Boolean isCentOs = false) {
     exec {
         if (os == "win") {
             commandLine "${project.projectDir}/build.cmd", "${flavor}"
         } else {
-            commandLine 'bash', 'build.sh', "${flavor}"
+            if (isCentOs) {
+                commandLine 'bash', 'build.sh', "${flavor}", "centos"
+            } else {
+                commandLine 'bash', 'build.sh', "${flavor}"
+            }
         }
     }
     def engineDir = "${project.parent.projectDir}/pytorch-engine"
     def classifier = "${os}-x86_64"
-    def publishDir = "${engineDir}/build/classes/java/main/jnilib/${classifier}/${flavor}"
+    def publishDir = "${engineDir}/build/jnilib/${classifier}/${flavor}"
     copy {
         def tree = fileTree(project.buildDir)
         tree.include("**/libdjl_torch.*", "**/djl_torch.dll")
@@ -39,11 +45,36 @@ def downloadBuild(String os, String flavor) {
     }
 }
 
+def downloadBuildAndroid() {
+    def LIST_ABI = ["armeabi-v7a", "arm64-v8a", "x86", "x86_64"]
+    LIST_ABI.each {
+        abi ->
+            exec {
+                commandLine 'bash', 'build_android.sh', "${abi}"
+            }
+            def ciDir = "${project.projectDir}/jnilib/android/${abi}"
+            copy {
+                from "${project.buildDir}/libdjl_torch.so"
+                into ciDir
+            }
+            def versionName = String.format("${project.parent.version}-%s", new Date().format('yyyyMMdd'))
+            def propFile = file("${ciDir}/pytorch.properties")
+            propFile.text = "version=${versionName}\n"
+            cleanBuild()
+    }
+}
+
 def cleanBuild() {
     delete "${project.projectDir}/build"
     delete "${project.projectDir}/libtorch"
+    delete "${project.projectDir}/libtorch_android"
 }
 
+task compileAndroidJNI {
+    doFirst {
+        downloadBuildAndroid()
+    }
+}
 
 task releaseJNI {
     doFirst {
@@ -55,15 +86,19 @@ task releaseJNI {
             cleanBuild()
             downloadBuild("win", "cu101")
             cleanBuild()
+            downloadBuild("win", "cu102")
+            cleanBuild()
         } else if (System.properties['os.name'].toLowerCase(Locale.ROOT).contains("mac")) {
             downloadBuild("osx", "cpu")
             cleanBuild()
         } else if (System.properties['os.name'].toLowerCase(Locale.ROOT).contains("linux")) {
-            downloadBuild("linux", "cpu")
+            downloadBuild("linux", "cpu", isCentOS)
             cleanBuild()
-            downloadBuild("linux", "cu92")
+            downloadBuild("linux", "cu92", isCentOS)
             cleanBuild()
-            downloadBuild("linux", "cu101")
+            downloadBuild("linux", "cu101", isCentOS)
+            cleanBuild()
+            downloadBuild("linux", "cu102", isCentOS)
             cleanBuild()
         } else {
             throw new IllegalStateException("Unknown Architecture " + System.properties['os.name'])
@@ -88,9 +123,9 @@ task compileJNI {
 task compileJNIGPU {
     doFirst {
         if (System.properties['os.name'].toLowerCase(Locale.ROOT).contains("windows")) {
-            downloadBuild("win", "cu101")
+            downloadBuild("win", "cu102")
         } else if (System.properties['os.name'].toLowerCase(Locale.ROOT).contains("linux")) {
-            downloadBuild("linux", "cu101")
+            downloadBuild("linux", "cu102")
         } else {
             throw new IllegalStateException("Architecture not supported: " + System.properties['os.name'])
         }
@@ -158,14 +193,24 @@ task downloadPyTorchNativeLib() {
     doLast {
         def url = "https://download.pytorch.org/libtorch"
         def files = [
-                "cpu/libtorch-cxx11-abi-shared-with-deps-${VERSION}%2Bcpu.zip"  : "cpu/linux",
-                "cpu/libtorch-macos-${VERSION}.zip"                             : "cpu/osx",
-                "cpu/libtorch-win-shared-with-deps-${VERSION}.zip"              : "cpu/win",
-                "cu92/libtorch-cxx11-abi-shared-with-deps-${VERSION}%2Bcu92.zip": "cu92/linux",
-                "cu101/libtorch-cxx11-abi-shared-with-deps-${VERSION}.zip"      : "cu101/linux",
-                "cu92/libtorch-win-shared-with-deps-${VERSION}.zip"             : "cu92/win",
-                "cu101/libtorch-win-shared-with-deps-${VERSION}.zip"            : "cu101/win",
+                "cpu/libtorch-cxx11-abi-shared-with-deps-${VERSION}%2Bcpu.zip"    : "cpu/linux",
+                "cpu/libtorch-macos-${VERSION}.zip"                               : "cpu/osx",
+                "cpu/libtorch-win-shared-with-deps-${VERSION}.zip"                : "cpu/win",
+                "cu92/libtorch-cxx11-abi-shared-with-deps-${VERSION}%2Bcu92.zip"  : "cu92/linux",
+                "cu101/libtorch-cxx11-abi-shared-with-deps-${VERSION}%2Bcu101.zip": "cu101/linux",
+                "cu102/libtorch-cxx11-abi-shared-with-deps-${VERSION}.zip"        : "cu102/linux",
+                "cu92/libtorch-win-shared-with-deps-${VERSION}.zip"               : "cu92/win",
+                "cu101/libtorch-win-shared-with-deps-${VERSION}.zip"              : "cu101/win",
+                "cu102/libtorch-win-shared-with-deps-${VERSION}.zip"              : "cu102/win"
         ]
+        if (isCentOS) {
+            files = [
+                    "cpu/libtorch-shared-with-deps-${VERSION}%2Bcpu.zip"    : "cpu/linux",
+                    "cu92/libtorch-shared-with-deps-${VERSION}%2Bcu92.zip"  : "cu92/linux",
+                    "cu101/libtorch-shared-with-deps-${VERSION}%2Bcu101.zip": "cu101/linux",
+                    "cu102/libtorch-shared-with-deps-${VERSION}.zip"        : "cu102/linux",
+            ]
+        }
         files.each { entry ->
             project.logger.lifecycle("Downloading ${url}/${entry.key}")
             def outputDir = new File("${BINARY_ROOT}/${entry.value}")
@@ -179,22 +224,29 @@ task downloadPyTorchNativeLib() {
             // CPU dependencies
             copy {
                 from("${outputDir}/libtorch/lib/") {
-                    include "libc10.*", "c10.dll", "libiomp5*.*", "libgomp*.*", "libtorch.*", "torch.dll"
+                    include "libc10.*", "c10.dll", "libiomp5*.*", "libgomp*.*", "libtorch.*", "libtorch_cpu.*", "torch.dll", "torch_cpu.dll", "fbgemm.dll", "asmjit.dll"
                 }
                 into("${outputDir}/native/lib")
             }
             // GPU dependencies
             copy {
                 from("${outputDir}/libtorch/lib/") {
-                    include "libc10_cuda.so", "c10_cuda.dll", "libcaffe2_nvrtc.so", "libnvrtc*.so.*", "libcudart*.*", "*nvToolsExt*.*", "cudnn*.dll", "caffe2_nvrtc.dll", "nvrtc64*.dll"
+                    include "libtorch_cuda.so", "torch_cuda.dll", "libc10_cuda.so", "c10_cuda.dll", "libcaffe2_nvrtc.so", "libnvrtc*.so.*", "libcudart*.*", "*nvToolsExt*.*", "cudnn*.dll", "caffe2_nvrtc.dll", "nvrtc64*.dll"
                 }
                 into("${outputDir}/native/lib")
+            }
+            if (isCentOS) {
+                def libstd = new File("${outputDir}/native/lib/libstdc++.so.6")
+                new URL("https://djl-ai.s3.amazonaws.com/publish/extra/libstdc%2B%2B.so.6").withInputStream {
+                    i -> libstd.withOutputStream { it << i}
+                }
             }
             delete(file)
             delete("${outputDir}/libtorch")
         }
-
-        new File("${BINARY_ROOT}/auto").mkdirs()
+        if (!isCentOS) {
+            new File("${BINARY_ROOT}/auto").mkdirs()
+        }
     }
 }
 
@@ -234,8 +286,14 @@ flavorNames.each { flavor ->
 
                 def binaryLicenseFile = new File(metaInf, "NOTICE")
                 binaryLicenseFile.text = new URL("https://raw.githubusercontent.com/pytorch/pytorch/master/NOTICE").text
+
+                if (isCentOS) {
+                    def libstd = new File(metaInf, "ATTRIBUTION")
+                    libstd.text = new URL("https://djl-ai.s3.amazonaws.com/publish/extra/THIRD-PARTY-LICENSES_qHnMKgbdWa.txt").text
+                }
             }
             from file("${BINARY_ROOT}/${flavor}/${osName}")
+            from file("src/main/resources")
             archiveClassifier = "${osName}-x86_64"
         }
         artifactsNames.add(tasks["${flavor}-${osName}Jar"])
@@ -246,15 +304,15 @@ flavorNames.each { flavor ->
     // and the native jars have to be published separately
     if (project.getProjectDir().toString() == System.getProperty("user.dir")) {
         publishing.publications.create("${flavor}", MavenPublication) {
-            artifactId "pytorch-native-${flavor}"
+            artifactId "pytorch-native-${flavor}" + (isCentOS ? "-precxx11" : "")
             from components.java
             artifacts = artifactsNames
             artifact jar
             artifact javadocJar
             artifact sourcesJar
             pom {
-                name = "PyTorch native library"
-                description = "PyTorch Engine native library binary distribution"
+                name = "DJL release for PyTorch native binaries"
+                description = "Deep Java Library (DJL) provided PyTorch native library binary distribution"
                 url = "http://www.djl.ai/pytorch/pytorch-native"
                 packaging = "jar"
 

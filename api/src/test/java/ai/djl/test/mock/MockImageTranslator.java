@@ -12,18 +12,19 @@
  */
 package ai.djl.test.mock;
 
+import ai.djl.modality.cv.Image;
 import ai.djl.modality.cv.output.DetectedObjects;
 import ai.djl.modality.cv.output.Rectangle;
 import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.ndarray.types.SparseFormat;
+import ai.djl.translate.Batchifier;
 import ai.djl.translate.Translator;
 import ai.djl.translate.TranslatorContext;
-import java.awt.image.BufferedImage;
 import java.util.Collections;
 
-public class MockImageTranslator implements Translator<BufferedImage, DetectedObjects> {
+public class MockImageTranslator implements Translator<Image, DetectedObjects> {
 
     private DetectedObjects output;
 
@@ -37,7 +38,7 @@ public class MockImageTranslator implements Translator<BufferedImage, DetectedOb
 
     /** {@inheritDoc} */
     @Override
-    public NDList processInput(TranslatorContext ctx, BufferedImage input) {
+    public NDList processInput(TranslatorContext ctx, Image input) {
         return new NDList(
                 new MockNDArray(
                         null, null, new Shape(3, 24, 24), DataType.FLOAT32, SparseFormat.DENSE));
@@ -47,6 +48,12 @@ public class MockImageTranslator implements Translator<BufferedImage, DetectedOb
     @Override
     public DetectedObjects processOutput(TranslatorContext ctx, NDList list) {
         return output;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public Batchifier getBatchifier() {
+        return null;
     }
 
     public void setOutput(DetectedObjects output) {

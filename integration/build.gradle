@@ -22,13 +22,14 @@ dependencies {
     if (System.getProperty("ai.djl.default_engine") == "PyTorch") {
         runtimeOnly project(":pytorch:pytorch-engine")
         runtimeOnly project(":pytorch:pytorch-model-zoo")
-        runtimeOnly "ai.djl.pytorch:pytorch-native-auto:${pytorch_version}-SNAPSHOT"
+        runtimeOnly "ai.djl.pytorch:pytorch-native-auto:${pytorch_version}"
     } else if (System.getProperty("ai.djl.default_engine") == "TensorFlow") {
         runtimeOnly project(":tensorflow:tensorflow-engine")
+        runtimeOnly project(":tensorflow:tensorflow-native-auto")
     } else {
         runtimeOnly project(":mxnet:mxnet-engine")
         runtimeOnly project(":mxnet:mxnet-model-zoo")
-        runtimeOnly "ai.djl.mxnet:mxnet-native-auto:${mxnet_version}-SNAPSHOT"
+        runtimeOnly "ai.djl.mxnet:mxnet-native-auto:${mxnet_version}"
     }
 }
 
@@ -73,6 +74,9 @@ jacocoTestReport {
 
 task debugEnv(type: JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
+    systemProperties System.getProperties()
+    systemProperties.remove("user.dir")
+    systemProperties.put("ai.djl.logging.level", "debug")
     main = "ai.djl.integration.util.DebugEnvironment"
 }
 
@@ -83,7 +87,7 @@ jacocoTestCoverageVerification {
     violationRules {
         rule {
             limit {
-                if ("PyTorch" == System.getProperty("ai.djl.default_engine")) {
+                if (["PyTorch", "TensorFlow"].contains(System.getProperty("ai.djl.default_engine"))) {
                     minimum = 0.6
                 } else {
                     minimum = 0.7

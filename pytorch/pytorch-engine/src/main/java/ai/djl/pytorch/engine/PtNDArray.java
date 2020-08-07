@@ -16,11 +16,6 @@ import ai.djl.Device;
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.NDManager;
-import ai.djl.ndarray.NDUtils;
-import ai.djl.ndarray.index.NDIndex;
-import ai.djl.ndarray.index.NDIndexBooleans;
-import ai.djl.ndarray.index.NDIndexElement;
-import ai.djl.ndarray.index.NDIndexFullSlice;
 import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.ndarray.types.SparseFormat;
@@ -34,7 +29,6 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -51,29 +45,10 @@ public class PtNDArray extends NativeResource implements NDArray {
     private DataType dataType;
     private Shape shape;
     private SparseFormat sparseFormat;
+    // use Boolean object to maintain three status: null, false, true
+    private Boolean hasGradient;
     private PtNDManager manager;
     private PtNDArrayEx ptNDArrayEx;
-
-    /**
-     * Constructs an PtTorch from a native handle and metadata (internal. Use {@link NDManager}
-     * instead).
-     *
-     * @param manager the manager to attach the new array to
-     * @param handle the pointer to the native PtTorch memory
-     * @param device the device the new array will be located on
-     * @param shape the shape of the new array
-     * @param dataType the dataType of the new array
-     */
-    PtNDArray(PtNDManager manager, Pointer handle, Device device, Shape shape, DataType dataType) {
-        this(manager, handle);
-        this.device = device;
-        // shape check
-        if (Arrays.stream(shape.getShape()).anyMatch(s -> s < 0)) {
-            throw new IllegalArgumentException("The shape must be >= 0");
-        }
-        this.shape = shape;
-        this.dataType = dataType;
-    }
 
     /**
      * Constructs an PyTorch from a native handle (internal. Use {@link NDManager} instead).
@@ -85,6 +60,7 @@ public class PtNDArray extends NativeResource implements NDArray {
         super(handle);
         this.manager = manager;
         this.ptNDArrayEx = new PtNDArrayEx(this);
+        manager.attach(getUid(), this);
     }
 
     /** {@inheritDoc} */
@@ -155,16 +131,47 @@ public class PtNDArray extends NativeResource implements NDArray {
 
     /** {@inheritDoc} */
     @Override
-    public void attachGradient() {}
+    public void attachGradient() {
+        attachGradient(null);
+    }
 
     /** {@inheritDoc} */
     @Override
-    public void attachGradient(SparseFormat sparseFormat) {}
+    public void attachGradient(SparseFormat sparseFormat) {
+        if (sparseFormat != null && !sparseFormat.equals(SparseFormat.DENSE)) {
+            throw new UnsupportedOperationException(
+                    "Sparse NDArray gradient atttach not supported");
+        }
+        JniUtils.attachGradient(this);
+        hasGradient = true;
+    }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray getGradient() {
-        throw new UnsupportedOperationException("Not implemented");
+        if (!hasGradient()) {
+            throw new IllegalStateException(
+                    "No gradient attached to this NDArray, please call array.requiredGradient()"
+                            + "on your NDArray or block.setInitializer() on your Block");
+        }
+        PtNDArray res = JniUtils.getGradient(this);
+        // If you call getGradient() before you run the backward,
+        // you will get nothing in PyTorch engine.
+        // To align with MXNet's behavior, we will create a zeros NDArray.
+        // TODO should we access the grad NDArray after we close the parameter NDArray?
+        if (res == null) {
+            res = (PtNDArray) getManager().zeros(getShape());
+        }
+        return res;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public boolean hasGradient() {
+        if (hasGradient == null) {
+            hasGradient = JniUtils.requiresGrad(this);
+        }
+        return hasGradient;
     }
 
     /** {@inheritDoc} */
@@ -176,68 +183,30 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public void set(Buffer data) {
-        throw new UnsupportedOperationException("Not implemented");
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public void set(NDIndex index, NDArray value) {
-        throw new UnsupportedOperationException("Not implemented");
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public void set(NDIndex index, Number value) {
-        throw new UnsupportedOperationException("Not implemented");
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public void setScalar(NDIndex index, Number value) {
-        throw new UnsupportedOperationException("Not implemented");
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public PtNDArray get(NDIndex index) {
-        // TODO find a better way to improve the speed
-        if (isScalar()) {
-            return (PtNDArray) duplicate();
-        }
-        // use booleanMask for NDIndexBooleans case
-        List<NDIndexElement> indices = index.getIndices();
-        if (!indices.isEmpty() && indices.get(0) instanceof NDIndexBooleans) {
-            if (indices.size() != 1) {
-                throw new IllegalArgumentException(
-                        "get() currently didn't support more that one boolean NDArray");
-            }
-            return booleanMask(((NDIndexBooleans) indices.get(0)).getIndex(), 0);
-        }
-
-        NDIndexFullSlice fullSlice = index.getAsFullSlice(getShape()).orElse(null);
-        PtNDArray afterSlice = this;
-        if (fullSlice != null) {
-            long[] min = fullSlice.getMin();
-            long[] max = fullSlice.getMax();
-            long[] step = fullSlice.getStep();
-            for (int dim = 0; dim < min.length; dim++) {
-                // Skip the dimension no need for slice
-                if (step[dim] == 1 && getShape().get(dim) == max[dim] - min[dim]) {
-                    continue;
-                }
-                afterSlice = JniUtils.slice(afterSlice, dim, min[dim], max[dim], step[dim]);
-            }
-            return afterSlice.squeeze(fullSlice.getToSqueeze().stream().mapToInt(i -> i).toArray());
-        } else {
-            throw new UnsupportedOperationException(
-                    "get() currently supports all, fixed, and slices indices");
-        }
+        PtNDArray other = getManager().create(data, getShape(), getDataType());
+        JniUtils.set(this, other);
+        other.close();
     }
 
     /** {@inheritDoc} */
     @Override
     public void copyTo(NDArray array) {
         throw new UnsupportedOperationException("Not implemented");
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void attach(NDManager manager) {
+        detach();
+        this.manager = (PtNDManager) manager;
+        manager.attach(getUid(), this);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void detach() {
+        manager.detach(getUid());
+        manager = PtNDManager.getSystemManager();
     }
 
     /** {@inheritDoc} */
@@ -255,11 +224,12 @@ public class PtNDArray extends NativeResource implements NDArray {
             return JniUtils.booleanMask(this, (PtNDArray) index);
         } else if (indexShape.equals(getShape().slice(axis))) {
             // index will be broadcasted by default
-            PtNDArray flattedResult = JniUtils.booleanMask(this, (PtNDArray) index);
-            // Shape recovery
-            Shape remainder = getShape().slice(0, axis);
-            long selectedSize = flattedResult.getShape().size() / remainder.size();
-            return flattedResult.reshape(remainder.addAll(new Shape(selectedSize)));
+            try (PtNDArray flattedResult = JniUtils.booleanMask(this, (PtNDArray) index)) {
+                // Shape recovery
+                Shape remainder = getShape().slice(0, axis);
+                long selectedSize = flattedResult.getShape().size() / remainder.size();
+                return flattedResult.reshape(remainder.addAll(new Shape(selectedSize)));
+            }
         } else {
             throw new UnsupportedOperationException(
                     "Not supported for shape not broadcastable "
@@ -313,8 +283,10 @@ public class PtNDArray extends NativeResource implements NDArray {
 
     /** {@inheritDoc} */
     @Override
-    public PtNDArray eq(Number other) {
-        return eq(manager.create(other));
+    public PtNDArray eq(Number n) {
+        try (NDArray number = manager.create(n)) {
+            return eq(number);
+        }
     }
 
     /** {@inheritDoc} */
@@ -325,8 +297,10 @@ public class PtNDArray extends NativeResource implements NDArray {
 
     /** {@inheritDoc} */
     @Override
-    public PtNDArray neq(Number other) {
-        return neq(manager.create(other));
+    public PtNDArray neq(Number n) {
+        try (NDArray number = manager.create(n)) {
+            return neq(number);
+        }
     }
 
     /** {@inheritDoc} */
@@ -337,8 +311,10 @@ public class PtNDArray extends NativeResource implements NDArray {
 
     /** {@inheritDoc} */
     @Override
-    public PtNDArray gt(Number other) {
-        return gt(manager.create(other));
+    public PtNDArray gt(Number n) {
+        try (NDArray number = manager.create(n)) {
+            return gt(number);
+        }
     }
 
     /** {@inheritDoc} */
@@ -349,8 +325,10 @@ public class PtNDArray extends NativeResource implements NDArray {
 
     /** {@inheritDoc} */
     @Override
-    public PtNDArray gte(Number other) {
-        return gte(manager.create(other));
+    public PtNDArray gte(Number n) {
+        try (NDArray number = manager.create(n)) {
+            return gte(number);
+        }
     }
 
     /** {@inheritDoc} */
@@ -361,8 +339,10 @@ public class PtNDArray extends NativeResource implements NDArray {
 
     /** {@inheritDoc} */
     @Override
-    public PtNDArray lt(Number other) {
-        return lt(manager.create(other));
+    public PtNDArray lt(Number n) {
+        try (NDArray number = manager.create(n)) {
+            return lt(number);
+        }
     }
 
     /** {@inheritDoc} */
@@ -373,8 +353,10 @@ public class PtNDArray extends NativeResource implements NDArray {
 
     /** {@inheritDoc} */
     @Override
-    public PtNDArray lte(Number other) {
-        return lte(manager.create(other));
+    public PtNDArray lte(Number n) {
+        try (NDArray number = manager.create(n)) {
+            return lte(number);
+        }
     }
 
     /** {@inheritDoc} */
@@ -386,7 +368,9 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public PtNDArray add(Number n) {
-        return add(manager.create(n));
+        try (NDArray number = manager.create(n)) {
+            return add(number);
+        }
     }
 
     /** {@inheritDoc} */
@@ -398,7 +382,9 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public PtNDArray sub(Number n) {
-        return sub(manager.create(n));
+        try (NDArray number = manager.create(n)) {
+            return sub(number);
+        }
     }
 
     /** {@inheritDoc} */
@@ -410,7 +396,9 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public PtNDArray mul(Number n) {
-        return mul(manager.create(n));
+        try (NDArray number = manager.create(n)) {
+            return mul(number);
+        }
     }
 
     /** {@inheritDoc} */
@@ -422,7 +410,9 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public PtNDArray div(Number n) {
-        return div(manager.create(n));
+        try (NDArray number = manager.create(n)) {
+            return div(number);
+        }
     }
 
     /** {@inheritDoc} */
@@ -434,9 +424,9 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public PtNDArray mod(Number n) {
-        // TODO PyTorch known issue https://github.com/pytorch/pytorch/issues/24753
-        // Current implementation only allow number have the same type fo tensor
-        throw new UnsupportedOperationException("Not implemented");
+        try (NDArray number = manager.create(n)) {
+            return mod(number);
+        }
     }
 
     /** {@inheritDoc} */
@@ -448,7 +438,9 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public PtNDArray pow(Number n) {
-        return pow(manager.create(n));
+        try (NDArray number = manager.create(n)) {
+            return pow(number);
+        }
     }
 
     /** {@inheritDoc} */
@@ -460,7 +452,9 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public PtNDArray addi(Number n) {
-        return addi(manager.create(n));
+        try (NDArray number = manager.create(n)) {
+            return addi(number);
+        }
     }
 
     /** {@inheritDoc} */
@@ -473,7 +467,9 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public PtNDArray subi(Number n) {
-        return subi(manager.create(n));
+        try (NDArray number = manager.create(n)) {
+            return subi(number);
+        }
     }
 
     /** {@inheritDoc} */
@@ -486,7 +482,9 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public PtNDArray muli(Number n) {
-        return muli(manager.create(n));
+        try (NDArray number = manager.create(n)) {
+            return muli(number);
+        }
     }
 
     /** {@inheritDoc} */
@@ -499,7 +497,9 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public PtNDArray divi(Number n) {
-        return divi(manager.create(n));
+        try (NDArray number = manager.create(n)) {
+            return divi(number);
+        }
     }
 
     /** {@inheritDoc} */
@@ -512,7 +512,9 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public PtNDArray modi(Number n) {
-        return modi(manager.create(n));
+        try (NDArray number = manager.create(n)) {
+            return modi(number);
+        }
     }
 
     /** {@inheritDoc} */
@@ -525,7 +527,9 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public PtNDArray powi(Number n) {
-        return powi(manager.create(n));
+        try (NDArray number = manager.create(n)) {
+            return powi(number);
+        }
     }
 
     /** {@inheritDoc} */
@@ -537,58 +541,67 @@ public class PtNDArray extends NativeResource implements NDArray {
 
     /** {@inheritDoc} */
     @Override
+    public PtNDArray sign() {
+        return JniUtils.sign(this);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public PtNDArray signi() {
+        JniUtils.signi(this);
+        return this;
+    }
+
+    /** {@inheritDoc} */
+    @Override
     public PtNDArray maximum(Number n) {
-        return maximum(manager.create(n));
+        try (NDArray number = manager.create(n)) {
+            return maximum(number);
+        }
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray maximum(NDArray other) {
-        if (!other.getDataType().equals(getDataType())) {
-            throw new IllegalArgumentException(
-                    "DataType mismatch, expected "
-                            + getDataType()
-                            + " Actual "
-                            + other.getDataType());
-        }
         return JniUtils.max(this, (PtNDArray) other);
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray minimum(Number n) {
-        return minimum(manager.create(n));
+        try (NDArray number = manager.create(n)) {
+            return minimum(number);
+        }
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray minimum(NDArray other) {
-        if (!other.getDataType().equals(getDataType())) {
-            throw new IllegalArgumentException(
-                    "DataType mismatch, expected "
-                            + getDataType()
-                            + " Actual "
-                            + other.getDataType());
-        }
         return JniUtils.min(this, (PtNDArray) other);
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray all() {
-        return JniUtils.all(toType(DataType.BOOLEAN, true));
+        try (PtNDArray bool = toType(DataType.BOOLEAN, true)) {
+            return JniUtils.all(bool);
+        }
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray any() {
-        return JniUtils.any(toType(DataType.BOOLEAN, true));
+        try (PtNDArray bool = toType(DataType.BOOLEAN, true)) {
+            return JniUtils.any(bool);
+        }
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray none() {
-        return JniUtils.none(toType(DataType.BOOLEAN, true));
+        try (PtNDArray bool = toType(DataType.BOOLEAN, true)) {
+            return JniUtils.none(bool);
+        }
     }
 
     /** {@inheritDoc} */
@@ -613,7 +626,7 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public PtNDArray square() {
-        return pow(2);
+        return JniUtils.square(this);
     }
 
     /** {@inheritDoc} */
@@ -625,7 +638,7 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public PtNDArray cbrt() {
-        return JniUtils.pow(this, (PtNDArray) manager.create(1.0 / 3));
+        return JniUtils.pow(this, (PtNDArray) getManager().create(1.0 / 3));
     }
 
     /** {@inheritDoc} */
@@ -757,7 +770,7 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public PtNDArray toRadians() {
-        return mul(Math.PI).div(manager.create(180.0));
+        return mul(Math.PI).div(180.0);
     }
 
     /** {@inheritDoc} */
@@ -807,13 +820,16 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public PtNDArray prod() {
-        throw new UnsupportedOperationException("Not implemented");
+        return JniUtils.prod(this);
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray prod(int[] axes, boolean keepDims) {
-        throw new UnsupportedOperationException("Not implemented");
+        if (axes.length > 1) {
+            throw new UnsupportedOperationException("Only 1 axis is support!");
+        }
+        return JniUtils.prod(this, axes[0], keepDims);
     }
 
     /** {@inheritDoc} */
@@ -848,6 +864,9 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public NDList split(long[] indices, int axis) {
+        if (indices.length == 0) {
+            return new NDList(this);
+        }
         List<Long> ptIndex = new ArrayList<>();
         ptIndex.add(indices[0]);
         for (int i = 1; i < indices.length; i++) {
@@ -867,12 +886,6 @@ public class PtNDArray extends NativeResource implements NDArray {
     @Override
     public PtNDArray reshape(Shape shape) {
         return JniUtils.reshape(this, shape.getShape());
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public NDArray reshapeLike(NDArray array) {
-        throw new UnsupportedOperationException("Not implemented");
     }
 
     /** {@inheritDoc} */
@@ -925,13 +938,13 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public PtNDArray logicalAnd(NDArray other) {
-        throw new UnsupportedOperationException("Not implemented");
+        return JniUtils.logicalAnd(this, (PtNDArray) other);
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray logicalOr(NDArray other) {
-        throw new UnsupportedOperationException("Not implemented");
+        return JniUtils.logicalOr(this, (PtNDArray) other);
     }
 
     /** {@inheritDoc} */
@@ -969,59 +982,59 @@ public class PtNDArray extends NativeResource implements NDArray {
 
     /** {@inheritDoc} */
     @Override
-    public PtNDArray softmax(int[] axes, float temperature) {
-        if (temperature != 1.0) {
-            throw new UnsupportedOperationException("PyTorch softmax didn't suuport temperature");
-        }
-        return JniUtils.softmax(this, axes[0], getDataType());
+    public PtNDArray softmax(int axis) {
+        return JniUtils.softmax(this, axis, getDataType());
     }
 
     /** {@inheritDoc} */
     @Override
-    public PtNDArray logSoftmax(int[] axes, float temperature) {
-        throw new UnsupportedOperationException("Not implemented");
+    public PtNDArray logSoftmax(int axis) {
+        return JniUtils.logSoftmax(this, axis, getDataType());
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray cumSum() {
-        throw new UnsupportedOperationException("Not implemented");
+        // TODO: change default behavior on cumSum
+        if (isScalar()) {
+            return (PtNDArray) reshape(1);
+        }
+        if (isEmpty()) {
+            return (PtNDArray) reshape(0);
+        }
+        return cumSum(0);
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray cumSum(int axis) {
-        throw new UnsupportedOperationException("Not implemented");
+        return JniUtils.cumSum(this, axis);
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray isInfinite() {
-        throw new UnsupportedOperationException("Not implemented");
+        return JniUtils.isInf(this);
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray isNaN() {
-        throw new UnsupportedOperationException("Not implemented");
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public PtNDArray createMask(NDIndex index) {
-        throw new UnsupportedOperationException("Not implemented");
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public PtNDArray createMask(Predicate<Number> predicate) {
-        throw new UnsupportedOperationException("Not implemented");
+        return JniUtils.isNaN(this);
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray tile(long repeats) {
-        throw new UnsupportedOperationException("Not implemented");
+        // zero-dim
+        if (isEmpty()) {
+            return (PtNDArray) duplicate();
+        }
+        // scalar
+        int dim = (isScalar()) ? 1 : getShape().dimension();
+        long[] repeatsArray = new long[dim];
+        Arrays.fill(repeatsArray, repeats);
+        return tile(repeatsArray);
     }
 
     /** {@inheritDoc} */
@@ -1033,7 +1046,7 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public PtNDArray tile(long[] repeats) {
-        throw new UnsupportedOperationException("Not implemented");
+        return JniUtils.tile(this, repeats);
     }
 
     /** {@inheritDoc} */
@@ -1045,19 +1058,35 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public PtNDArray repeat(long repeats) {
-        throw new UnsupportedOperationException("Not implemented");
+        // zero-dim
+        if (isEmpty()) {
+            return (PtNDArray) duplicate();
+        }
+        // scalar
+        int dim = (isScalar()) ? 1 : getShape().dimension();
+        long[] repeatsArray = new long[dim];
+        Arrays.fill(repeatsArray, repeats);
+        return repeat(repeatsArray);
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray repeat(int axis, long repeats) {
-        throw new UnsupportedOperationException("Not implemented");
+        return JniUtils.repeat(this, repeats, axis);
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray repeat(long[] repeats) {
-        throw new UnsupportedOperationException("Not implemented");
+        PtNDArray result = this;
+        for (int dim = 0; dim < repeats.length; dim++) {
+            PtNDArray temp = result;
+            result = JniUtils.repeat(result, repeats[dim], dim);
+            if (temp != this) {
+                temp.close();
+            }
+        }
+        return result;
     }
 
     /** {@inheritDoc} */
@@ -1069,7 +1098,13 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public PtNDArray dot(NDArray other) {
-        throw new UnsupportedOperationException("Not implemented");
+        int selfDim = this.getShape().dimension();
+        int otherDim = other.getShape().dimension();
+        if (selfDim != otherDim || selfDim > 2) {
+            throw new UnsupportedOperationException(
+                    "Dimension mismatch or high dimensional dot operation is not supported. Please use .matMul instead.");
+        }
+        return JniUtils.dot(this, (PtNDArray) other);
     }
 
     @Override
@@ -1090,6 +1125,11 @@ public class PtNDArray extends NativeResource implements NDArray {
     @Override
     public PtNDArray swapAxes(int axis1, int axis2) {
         return JniUtils.transpose(this, axis1, axis2);
+    }
+
+    @Override
+    public NDArray flip(int... axes) {
+        return JniUtils.flip(this, Arrays.stream(axes).mapToLong(ele -> (long) ele).toArray());
     }
 
     /** {@inheritDoc} */
@@ -1127,9 +1167,9 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public PtNDArray argMax(int axis) {
-        if (isEmpty()) {
-            Shape newShape = NDUtils.getShapeFromEmptyNDArrayForReductionOp(getShape(), axis);
-            return (PtNDArray) manager.create(newShape, DataType.INT64);
+        // TODO pytorch bug: https://github.com/pytorch/pytorch/issues/37084
+        if (isScalar()) {
+            return (PtNDArray) manager.create(0L);
         }
         return JniUtils.argMax(this, axis, false);
     }
@@ -1146,9 +1186,9 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public PtNDArray argMin(int axis) {
-        if (isEmpty()) {
-            Shape newShape = NDUtils.getShapeFromEmptyNDArrayForReductionOp(getShape(), axis);
-            return (PtNDArray) manager.create(newShape, DataType.INT64);
+        // TODO pytorch bug: https://github.com/pytorch/pytorch/issues/37084
+        if (isScalar()) {
+            return (PtNDArray) manager.create(0L);
         }
         return JniUtils.argMin(this, axis, false);
     }
@@ -1180,13 +1220,25 @@ public class PtNDArray extends NativeResource implements NDArray {
     /** {@inheritDoc} */
     @Override
     public PtNDArray toDense() {
-        throw new UnsupportedOperationException("Not implemented");
+        if (!isSparse()) {
+            return (PtNDArray) duplicate();
+        }
+        return JniUtils.toDense(this);
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray toSparse(SparseFormat fmt) {
-        throw new UnsupportedOperationException("Not implemented");
+        if (fmt == SparseFormat.DENSE) {
+            throw new IllegalArgumentException("Default type is not allowed");
+        }
+        if (fmt != SparseFormat.COO) {
+            throw new UnsupportedOperationException("Only COO sparse type supported for PyTorch");
+        }
+        if (fmt == getSparseFormat()) {
+            return (PtNDArray) duplicate();
+        }
+        return JniUtils.toSparse(this);
     }
 
     /** {@inheritDoc} */

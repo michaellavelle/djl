@@ -16,16 +16,19 @@ import ai.djl.Application;
 import ai.djl.Device;
 import ai.djl.MalformedModelException;
 import ai.djl.Model;
+import ai.djl.ModelException;
 import ai.djl.basicdataset.Cifar10;
 import ai.djl.basicmodelzoo.BasicModelZoo;
 import ai.djl.basicmodelzoo.cv.classification.ResNetV1;
 import ai.djl.examples.training.util.Arguments;
-import ai.djl.examples.training.util.TrainingUtils;
+import ai.djl.inference.Predictor;
 import ai.djl.metric.Metrics;
 import ai.djl.modality.Classifications;
+import ai.djl.modality.cv.Image;
+import ai.djl.modality.cv.ImageFactory;
 import ai.djl.modality.cv.transform.Normalize;
 import ai.djl.modality.cv.transform.ToTensor;
-import ai.djl.ndarray.NDList;
+import ai.djl.modality.cv.translator.ImageClassificationTranslator;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.Block;
 import ai.djl.nn.Blocks;
@@ -35,7 +38,9 @@ import ai.djl.nn.core.Linear;
 import ai.djl.repository.zoo.Criteria;
 import ai.djl.repository.zoo.ModelNotFoundException;
 import ai.djl.repository.zoo.ModelZoo;
+import ai.djl.repository.zoo.ZooModel;
 import ai.djl.training.DefaultTrainingConfig;
+import ai.djl.training.EasyTrain;
 import ai.djl.training.Trainer;
 import ai.djl.training.TrainingResult;
 import ai.djl.training.dataset.Dataset;
@@ -45,11 +50,15 @@ import ai.djl.training.listener.TrainingListener;
 import ai.djl.training.loss.Loss;
 import ai.djl.training.util.ProgressBar;
 import ai.djl.translate.Pipeline;
-import java.awt.image.BufferedImage;
+import ai.djl.translate.TranslateException;
 import java.io.IOException;
+import java.net.URL;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Map;
 import org.apache.commons.cli.ParseException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * An example of training an image classification (ResNet for Cifar10) model.
@@ -60,15 +69,17 @@ import org.apache.commons.cli.ParseException;
  */
 public final class TrainResnetWithCifar10 {
 
+    private static final Logger logger = LoggerFactory.getLogger(TrainResnetWithCifar10.class);
+
     private TrainResnetWithCifar10() {}
 
     public static void main(String[] args)
-            throws ParseException, ModelNotFoundException, IOException, MalformedModelException {
+            throws ParseException, ModelException, IOException, TranslateException {
         TrainResnetWithCifar10.runExample(args);
     }
 
     public static TrainingResult runExample(String[] args)
-            throws IOException, ParseException, ModelNotFoundException, MalformedModelException {
+            throws IOException, ParseException, ModelException, TranslateException {
         Arguments arguments = Arguments.parseArgs(args);
 
         try (Model model = getModel(arguments)) {
@@ -90,13 +101,7 @@ public final class TrainResnetWithCifar10 {
 
                 // initialize trainer with proper input shape
                 trainer.initialize(inputShape);
-                TrainingUtils.fit(
-                        trainer,
-                        arguments.getEpoch(),
-                        trainDataset,
-                        validationDataset,
-                        arguments.getOutputDir(),
-                        "resnetv1");
+                EasyTrain.fit(trainer, arguments.getEpoch(), trainDataset, validationDataset);
 
                 TrainingResult result = trainer.getTrainingResult();
                 model.setProperty("Epoch", String.valueOf(result.getEpoch()));
@@ -105,7 +110,11 @@ public final class TrainResnetWithCifar10 {
                         String.format("%.5f", result.getValidateEvaluation("Accuracy")));
                 model.setProperty("Loss", String.format("%.5f", result.getValidateLoss()));
 
-                model.save(Paths.get("build/model"), "resnetv1");
+                Path modelPath = Paths.get("build/model");
+                model.save(modelPath, "resnetv1");
+
+                Classifications classifications = testSaveParameters(model.getBlock(), modelPath);
+                logger.info("Predict result: {}", classifications.topK(3));
                 return result;
             }
         }
@@ -116,10 +125,10 @@ public final class TrainResnetWithCifar10 {
         boolean isSymbolic = arguments.isSymbolic();
         boolean preTrained = arguments.isPreTrained();
         Map<String, String> options = arguments.getCriteria();
-        Criteria.Builder<BufferedImage, Classifications> builder =
+        Criteria.Builder<Image, Classifications> builder =
                 Criteria.builder()
                         .optApplication(Application.CV.IMAGE_CLASSIFICATION)
-                        .setTypes(BufferedImage.class, Classifications.class)
+                        .setTypes(Image.class, Classifications.class)
                         .optProgress(new ProgressBar())
                         .optArtifactId("resnet");
         if (isSymbolic) {
@@ -136,9 +145,10 @@ public final class TrainResnetWithCifar10 {
             SymbolBlock block = (SymbolBlock) model.getBlock();
             block.removeLastBlock();
             newBlock.add(block);
-            newBlock.add(x -> new NDList(x.singletonOrThrow().squeeze()));
-            newBlock.add(Linear.builder().setOutChannels(10).build());
+            // the original model don't include the flatten
+            // so apply the flatten here
             newBlock.add(Blocks.batchFlattenBlock());
+            newBlock.add(Linear.builder().setUnits(10).build());
             model.setBlock(newBlock);
             if (!preTrained) {
                 model.getBlock().clear();
@@ -159,7 +169,7 @@ public final class TrainResnetWithCifar10 {
             return ModelZoo.loadModel(builder.build());
         } else {
             // construct new ResNet50 without pre-trained weights
-            Model model = Model.newInstance();
+            Model model = Model.newInstance("resnetv1");
             Block resNet50 =
                     ResNetV1.builder()
                             .setImageShape(new Shape(3, 32, 32))
@@ -171,6 +181,36 @@ public final class TrainResnetWithCifar10 {
         }
     }
 
+    private static Classifications testSaveParameters(Block block, Path path)
+            throws IOException, ModelException, TranslateException {
+        URL synsetUrl =
+                new URL(
+                        "https://mlrepo.djl.ai/model/cv/image_classification/ai/djl/mxnet/synset_cifar10.txt");
+        ImageClassificationTranslator translator =
+                ImageClassificationTranslator.builder()
+                        .addTransform(new ToTensor())
+                        .addTransform(new Normalize(Cifar10.NORMALIZE_MEAN, Cifar10.NORMALIZE_STD))
+                        .optSynsetUrl(synsetUrl)
+                        .optApplySoftmax(true)
+                        .build();
+
+        Image img = ImageFactory.getInstance().fromUrl("src/test/resources/airplane1.png");
+
+        Criteria<Image, Classifications> criteria =
+                Criteria.builder()
+                        .setTypes(Image.class, Classifications.class)
+                        .optModelUrls(path.toUri().toString())
+                        .optTranslator(translator)
+                        .optBlock(block)
+                        .optModelName("resnetv1")
+                        .build();
+
+        try (ZooModel<Image, Classifications> model = ModelZoo.loadModel(criteria);
+                Predictor<Image, Classifications> predictor = model.newPredictor()) {
+            return predictor.predict(img);
+        }
+    }
+
     private static DefaultTrainingConfig setupTrainingConfig(Arguments arguments) {
         return new DefaultTrainingConfig(Loss.softmaxCrossEntropyLoss())
                 .addEvaluator(new Accuracy())
@@ -179,7 +219,7 @@ public final class TrainResnetWithCifar10 {
     }
 
     private static RandomAccessDataset getDataset(Dataset.Usage usage, Arguments arguments)
-            throws IOException {
+            throws IOException, TranslateException {
         Pipeline pipeline =
                 new Pipeline(
                         new ToTensor(),

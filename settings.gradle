@@ -15,8 +15,8 @@ include ':tensorflow:tensorflow-native-auto'
 include ':pytorch:pytorch-engine'
 include ':pytorch:pytorch-model-zoo'
 include ':pytorch:pytorch-native'
-include ':fasttext:fasttext-engine'
+include ':onnxruntime:onnxruntime-engine'
 include ':testing'
-include ':3rdparty:aws-ai'
-
-project(":examples").buildFileName = "djl.gradle"
+include ':extensions:aws-ai'
+include ':extensions:hadoop'
+include ':extensions:fasttext'

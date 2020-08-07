@@ -10,7 +10,6 @@ All the code here are Python code, you need to install [TensorFlow for Python](h
 For example, if you have a ResNet50 with trained weight, you can directly save it in SavedModel format using `tf.saved_model.save`.
 Here we just use pre-trained weights of ResNet50 from Keras Applications:
 
-
 ```python
 import tensorflow as tf
 import tensorflow.keras as keras
@@ -20,15 +19,17 @@ tf.saved_model.save(resnet, "resnet/1/")
 
 However, if you already saved your model in .h5 file using `keras.model.save` like below, you need a simple python script
 to convert it to SavedModel format.
+
 ```python
 resnet.save("resnet.h5")
 ```
 
 Just load your .h5 model file back to Keras and save it to SavedModel:
+
 ```python
 loaded_model = keras.models.load_model("resnet.h5")
 tf.saved_model.save(loaded_model, "resnet/1/")
 ```
 
 Once you have a SavedModel, you can load your Keras model using DJL TensorFlow engine.
-Refer to [How to import local TensorFlow models in DJL](how_to_import_local_tensorflow_models.md).
+Refer to [How to load models in DJL](../load_model.md).

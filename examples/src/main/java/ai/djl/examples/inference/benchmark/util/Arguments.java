@@ -14,30 +14,32 @@ package ai.djl.examples.inference.benchmark.util;
 
 import ai.djl.engine.Engine;
 import ai.djl.modality.Classifications;
+import ai.djl.modality.cv.Image;
+import ai.djl.modality.cv.ImageFactory;
 import ai.djl.modality.cv.output.DetectedObjects;
-import ai.djl.modality.cv.util.BufferedImageUtils;
 import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.types.Shape;
-import com.google.gson.Gson;
+import ai.djl.util.JsonUtils;
 import com.google.gson.reflect.TypeToken;
-import java.awt.image.BufferedImage;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.lang.reflect.Type;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.Option;
-import org.apache.commons.cli.OptionGroup;
 import org.apache.commons.cli.Options;
 
 /** A class represents parsed command line arguments. */
 public class Arguments {
 
-    private String modelDir;
     private String artifactId;
     private String imageFile;
     private String outputDir;
@@ -45,17 +47,14 @@ public class Arguments {
     private int duration;
     private int iteration;
     private int threads;
-    private String inputClass;
-    private String outputClass;
-    private Shape inputShape;
+    private Shape[] inputShapes;
+    private boolean help;
 
     public Arguments(CommandLine cmd) {
-        modelDir = cmd.getOptionValue("model-dir");
         artifactId = cmd.getOptionValue("artifact-id");
         outputDir = cmd.getOptionValue("output-dir");
         imageFile = cmd.getOptionValue("image");
-        inputClass = cmd.getOptionValue("input-class");
-        outputClass = cmd.getOptionValue("output-class");
+        help = cmd.hasOption("help");
         if (cmd.hasOption("duration")) {
             duration = Integer.parseInt(cmd.getOptionValue("duration"));
         }
@@ -65,30 +64,40 @@ public class Arguments {
         }
         if (cmd.hasOption("threads")) {
             threads = Integer.parseInt(cmd.getOptionValue("threads"));
+            if (threads <= 0) {
+                threads = Runtime.getRuntime().availableProcessors() * 2 - 1;
+            }
         } else {
             threads = Runtime.getRuntime().availableProcessors() * 2 - 1;
         }
         if (cmd.hasOption("criteria")) {
             Type type = new TypeToken<Map<String, String>>() {}.getType();
-            criteria = new Gson().fromJson(cmd.getOptionValue("criteria"), type);
+            criteria = JsonUtils.GSON.fromJson(cmd.getOptionValue("criteria"), type);
         }
-        if (cmd.hasOption("input-shape")) {
-            String shape = cmd.getOptionValue("input-shape");
-            String[] tokens = shape.split(",");
-            long[] shapes = Arrays.stream(tokens).mapToLong(Long::parseLong).toArray();
-            inputShape = new Shape(shapes);
+        if (cmd.hasOption("input-shapes")) {
+            String shape = cmd.getOptionValue("input-shapes");
+            if (shape.contains("(")) {
+                Pattern pattern = Pattern.compile("\\((\\s*(\\d+)([,\\s]+\\d+)*\\s*)\\)");
+                Matcher matcher = pattern.matcher(shape);
+                List<Shape> shapes = new ArrayList<>();
+                while (matcher.find()) {
+                    String[] tokens = matcher.group(1).split(",");
+                    long[] array = Arrays.stream(tokens).mapToLong(Long::parseLong).toArray();
+                    shapes.add(new Shape(array));
+                }
+                inputShapes = shapes.toArray(new Shape[0]);
+            } else {
+                String[] tokens = shape.split(",");
+                long[] shapes = Arrays.stream(tokens).mapToLong(Long::parseLong).toArray();
+                inputShapes = new Shape[] {new Shape(shapes)};
+            }
         }
     }
 
     public static Options getOptions() {
         Options options = new Options();
         options.addOption(
-                Option.builder("p")
-                        .longOpt("model-dir")
-                        .hasArg()
-                        .argName("MODEL-DIR")
-                        .desc("Path to the model directory.")
-                        .build());
+                Option.builder("h").longOpt("help").hasArg(false).desc("Print this help.").build());
         options.addOption(
                 Option.builder("n")
                         .longOpt("artifact-id")
@@ -97,49 +106,33 @@ public class Arguments {
                         .desc("Model artifact id.")
                         .build());
         options.addOption(
-                Option.builder("ic")
-                        .longOpt("input-class")
+                Option.builder("s")
+                        .longOpt("input-shapes")
                         .hasArg()
-                        .argName("INPUT-CLASS")
-                        .desc("Input class type.")
-                        .build());
-        options.addOption(
-                Option.builder("is")
-                        .longOpt("input-shape")
-                        .hasArg()
-                        .argName("INPUT-SHAPE")
-                        .desc("Input data shape.")
-                        .build());
-        options.addOption(
-                Option.builder("oc")
-                        .longOpt("output-class")
-                        .hasArg()
-                        .argName("OUTPUT-CLASS")
-                        .desc("Output class type.")
+                        .argName("INPUT-SHAPES")
+                        .desc("Input data shapes for non-CV model.")
                         .build());
         options.addOption(
                 Option.builder("i")
                         .longOpt("image")
                         .hasArg()
                         .argName("IMAGE")
-                        .desc("Image file.")
+                        .desc("Image file path for benchmarking CV model.")
                         .build());
-        options.addOptionGroup(
-                new OptionGroup()
-                        .addOption(
-                                Option.builder("d")
-                                        .longOpt("duration")
-                                        .hasArg()
-                                        .argName("DURATION")
-                                        .desc("Duration of the test in minutes.")
-                                        .build())
-                        .addOption(
-                                Option.builder("c")
-                                        .longOpt("iteration")
-                                        .hasArg()
-                                        .argName("ITERATION")
-                                        .desc("Number of total iterations.")
-                                        .build()));
+        options.addOption(
+                Option.builder("d")
+                        .longOpt("duration")
+                        .hasArg()
+                        .argName("DURATION")
+                        .desc("Duration of the test in minutes.")
+                        .build());
+        options.addOption(
+                Option.builder("c")
+                        .longOpt("iteration")
+                        .hasArg()
+                        .argName("ITERATION")
+                        .desc("Number of total iterations (per thread).")
+                        .build());
         options.addOption(
                 Option.builder("t")
                         .longOpt("threads")
@@ -159,25 +152,13 @@ public class Arguments {
                         .longOpt("criteria")
                         .hasArg()
                         .argName("CRITERIA")
-                        .desc("The criteria used for the model.")
+                        .desc("The criteria (json string) used for searching the model.")
                         .build());
         return options;
     }
 
     public int getDuration() {
         return duration;
-    }
-
-    public Path getModelDir() throws IOException {
-        if (modelDir == null) {
-            throw new IOException("Please specify --model-dir");
-        }
-
-        Path path = Paths.get(modelDir);
-        if (Files.notExists(path)) {
-            throw new FileNotFoundException("model directory not found: " + modelDir);
-        }
-        return path;
     }
 
     public String getArtifactId() {
@@ -220,6 +201,9 @@ public class Arguments {
     }
 
     public String getOutputDir() {
+        if (outputDir == null) {
+            outputDir = "build";
+        }
         return outputDir;
     }
 
@@ -227,36 +211,35 @@ public class Arguments {
         return criteria;
     }
 
-    public Class<?> getInputClass() throws ClassNotFoundException {
-        if (inputClass == null) {
-            return BufferedImage.class;
+    public Class<?> getInputClass() {
+        if (inputShapes == null) {
+            return Image.class;
         }
-        return Class.forName(inputClass);
+        return NDList.class;
     }
 
-    public Class<?> getOutputClass() throws ClassNotFoundException {
-        if (outputClass == null) {
+    public Class<?> getOutputClass() {
+        if (inputShapes == null) {
             if (artifactId != null && artifactId.contains("ssd")) {
                 return DetectedObjects.class;
             }
             return Classifications.class;
         }
-        return Class.forName(outputClass);
+        return NDList.class;
     }
 
-    public Object getInputData() throws IOException, ClassNotFoundException {
-        Class<?> klass = getInputClass();
-        if (klass == BufferedImage.class) {
-            return BufferedImageUtils.fromFile(getImageFile());
-        } else if (klass == float[].class || klass == NDList.class) {
-            // TODO: load data from input file
-            // Create empty NDArray from shape for now
-            return null;
+    public Object getInputData() throws IOException {
+        if (inputShapes == null) {
+            return ImageFactory.getInstance().fromFile(getImageFile());
         }
-        throw new IllegalArgumentException("Unsupported input class: " + klass);
+        return null;
     }
 
-    public Shape getInputShape() {
-        return inputShape;
+    public Shape[] getInputShapes() {
+        return inputShapes;
+    }
+
+    public boolean hasHelp() {
+        return help;
     }
 }

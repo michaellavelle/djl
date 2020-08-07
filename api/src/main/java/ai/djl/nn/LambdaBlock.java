@@ -13,16 +13,14 @@
 package ai.djl.nn;
 
 import ai.djl.MalformedModelException;
+import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.NDManager;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.training.ParameterStore;
 import ai.djl.util.PairList;
 import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
-import java.util.Collections;
-import java.util.List;
 import java.util.function.Function;
 
 /**
@@ -33,7 +31,7 @@ import java.util.function.Function;
  * in converting activation functions, identity blocks, and more. For example, identity block can be
  * created as {@code new LambdaBlock(x -> x)}.
  */
-public class LambdaBlock extends ParameterBlock {
+public class LambdaBlock extends AbstractBlock {
 
     private static final byte VERSION = 2;
 
@@ -45,13 +43,28 @@ public class LambdaBlock extends ParameterBlock {
      * @param lambda the function to apply
      */
     public LambdaBlock(Function<NDList, NDList> lambda) {
+        super(VERSION);
         this.lambda = lambda;
+    }
+
+    /**
+     * Creates a {@link LambdaBlock} for a singleton function.
+     *
+     * @param lambda a function accepting a singleton {@link NDList} and returning another sinleton
+     *     {@link NDList}
+     * @return a new {@link LambdaBlock} for the function
+     */
+    public static LambdaBlock singleton(Function<NDArray, NDArray> lambda) {
+        return new LambdaBlock(arrays -> new NDList(lambda.apply(arrays.singletonOrThrow())));
     }
 
     /** {@inheritDoc} */
     @Override
     public NDList forward(
-            ParameterStore parameterStore, NDList inputs, PairList<String, Object> params) {
+            ParameterStore parameterStore,
+            NDList inputs,
+            boolean training,
+            PairList<String, Object> params) {
         return lambda.apply(inputs);
     }
 
@@ -70,25 +83,6 @@ public class LambdaBlock extends ParameterBlock {
             }
             return outputShapes;
         }
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public List<Parameter> getDirectParameters() {
-        return Collections.emptyList();
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public Shape getParameterShape(String name, Shape[] inputShapes) {
-        throw new IllegalArgumentException("LambdaBlocks have no parameters");
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public void saveParameters(DataOutputStream os) throws IOException {
-        os.writeByte(VERSION);
-        saveInputShapes(os);
     }
 
     /** {@inheritDoc} */

@@ -63,7 +63,7 @@ public final class PtEngine extends Engine {
     /** {@inheritDoc} */
     @Override
     public String getVersion() {
-        return "1.4.0";
+        return "1.5.0";
     }
 
     /** {@inheritDoc} */
@@ -74,8 +74,8 @@ public final class PtEngine extends Engine {
 
     /** {@inheritDoc} */
     @Override
-    public Model newModel(Device device) {
-        return new PtModel(device);
+    public Model newModel(String name, Device device) {
+        return new PtModel(name, device);
     }
 
     /** {@inheritDoc} */
@@ -93,7 +93,7 @@ public final class PtEngine extends Engine {
     /** {@inheritDoc} */
     @Override
     public GradientCollector newGradientCollector() {
-        throw new UnsupportedOperationException("PyTorch does not support training yet");
+        return new PtGradientCollector();
     }
 
     /** {@inheritDoc} */

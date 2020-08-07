@@ -15,6 +15,7 @@ package ai.djl.mxnet.zoo.cv.poseestimation;
 import ai.djl.Application;
 import ai.djl.Device;
 import ai.djl.MalformedModelException;
+import ai.djl.modality.cv.Image;
 import ai.djl.modality.cv.output.Joints;
 import ai.djl.modality.cv.transform.Normalize;
 import ai.djl.modality.cv.transform.Resize;
@@ -30,12 +31,10 @@ import ai.djl.repository.zoo.BaseModelLoader;
 import ai.djl.repository.zoo.Criteria;
 import ai.djl.repository.zoo.ModelNotFoundException;
 import ai.djl.repository.zoo.ZooModel;
-import ai.djl.translate.Pipeline;
 import ai.djl.translate.Translator;
 import ai.djl.translate.TranslatorFactory;
 import ai.djl.util.Pair;
 import ai.djl.util.Progress;
-import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
@@ -50,12 +49,15 @@ import java.util.Map;
  *
  * @see ai.djl.mxnet.engine.MxSymbolBlock
  */
-public class SimplePoseModelLoader extends BaseModelLoader<BufferedImage, Joints> {
+public class SimplePoseModelLoader extends BaseModelLoader<Image, Joints> {
 
     private static final Application APPLICATION = Application.CV.POSE_ESTIMATION;
     private static final String GROUP_ID = MxModelZoo.GROUP_ID;
     private static final String ARTIFACT_ID = "simple_pose";
     private static final String VERSION = "0.0.1";
+
+    private static final float[] MEAN = {0.485f, 0.456f, 0.406f};
+    private static final float[] STD = {0.229f, 0.224f, 0.225f};
 
     /**
      * Creates the Model loader from the given repository.
@@ -63,10 +65,10 @@ public class SimplePoseModelLoader extends BaseModelLoader<BufferedImage, Joints
      * @param repository the repository to load the model from
      */
     public SimplePoseModelLoader(Repository repository) {
-        super(repository, MRL.model(APPLICATION, GROUP_ID, ARTIFACT_ID), VERSION);
+        super(repository, MRL.model(APPLICATION, GROUP_ID, ARTIFACT_ID), VERSION, new MxModelZoo());
         FactoryImpl factory = new FactoryImpl();
 
-        factories.put(new Pair<>(BufferedImage.class, Joints.class), factory);
+        factories.put(new Pair<>(Image.class, Joints.class), factory);
         factories.put(new Pair<>(Path.class, Joints.class), new FileTranslatorFactory<>(factory));
         factories.put(new Pair<>(URL.class, Joints.class), new UrlTranslatorFactory<>(factory));
         factories.put(
@@ -92,12 +94,12 @@ public class SimplePoseModelLoader extends BaseModelLoader<BufferedImage, Joints
      * @throws MalformedModelException if the model data is malformed
      */
     @Override
-    public ZooModel<BufferedImage, Joints> loadModel(
+    public ZooModel<Image, Joints> loadModel(
             Map<String, String> filters, Device device, Progress progress)
             throws IOException, ModelNotFoundException, MalformedModelException {
-        Criteria<BufferedImage, Joints> criteria =
+        Criteria<Image, Joints> criteria =
                 Criteria.builder()
-                        .setTypes(BufferedImage.class, Joints.class)
+                        .setTypes(Image.class, Joints.class)
                         .optFilters(filters)
                         .optDevice(device)
                         .optProgress(progress)
@@ -105,25 +107,19 @@ public class SimplePoseModelLoader extends BaseModelLoader<BufferedImage, Joints
         return loadModel(criteria);
     }
 
-    private static final class FactoryImpl implements TranslatorFactory<BufferedImage, Joints> {
+    private static final class FactoryImpl implements TranslatorFactory<Image, Joints> {
 
         /** {@inheritDoc} */
         @Override
-        public Translator<BufferedImage, Joints> newInstance(Map<String, Object> arguments) {
+        public Translator<Image, Joints> newInstance(Map<String, Object> arguments) {
             int width = ((Double) arguments.getOrDefault("width", 192d)).intValue();
             int height = ((Double) arguments.getOrDefault("height", 256d)).intValue();
             double threshold = ((Double) arguments.getOrDefault("threshold", 0.2d));
 
-            Pipeline pipeline = new Pipeline();
-            pipeline.add(new Resize(width, height))
-                    .add(new ToTensor())
-                    .add(
-                            new Normalize(
-                                    new float[] {0.485f, 0.456f, 0.406f},
-                                    new float[] {0.229f, 0.224f, 0.225f}));
-
             return SimplePoseTranslator.builder()
-                    .setPipeline(pipeline)
+                    .addTransform(new Resize(width, height))
+                    .addTransform(new ToTensor())
+                    .addTransform(new Normalize(MEAN, STD))
                     .optThreshold((float) threshold)
                     .build();
         }

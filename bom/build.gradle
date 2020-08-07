@@ -1,0 +1,86 @@
+plugins {
+    id "java-platform"
+    id "maven-publish"
+    id 'signing'
+}
+
+group = "ai.djl"
+boolean isRelease = project.hasProperty("release") || project.hasProperty("staging")
+version = "0.7.0" + (isRelease ? "" : "-SNAPSHOT")
+
+dependencies {
+    constraints {
+        api "ai.djl:api:${version}"
+        api "ai.djl:basicdataset:${version}"
+        api "ai.djl:model-zoo:${version}"
+        api "ai.djl.mxnet:mxnet-engine:${version}"
+        api "ai.djl.mxnet:mxnet-model-zoo:${version}"
+        api "ai.djl.mxnet:mxnet-native-auto:${mxnet_version}"
+        api "ai.djl.mxnet:mxnet-native-mkl:${mxnet_version}"
+        api "ai.djl.mxnet:mxnet-native-cu92:${mxnet_version}"
+        api "ai.djl.mxnet:mxnet-native-cu101:${mxnet_version}"
+        api "ai.djl.mxnet:mxnet-native-cu102:${mxnet_version}"
+        api "ai.djl.tensorflow:tensorflow-api:${version}"
+        api "ai.djl.tensorflow:tensorflow-engine:${version}"
+        api "ai.djl.tensorflow:tensorflow-model-zoo:${version}"
+        api "ai.djl.tensorflow:tensorflow-native-auto:${tensorflow_version}"
+        api "ai.djl.pytorch:pytorch-engine:${version}"
+        api "ai.djl.pytorch:pytorch-engine-precxx11:${version}"
+        api "ai.djl.pytorch:pytorch-model-zoo:${version}"
+        api "ai.djl.pytorch:pytorch-native-auto:${pytorch_version}"
+        api "ai.djl.pytorch:pytorch-native-cpu:${pytorch_version}"
+        api "ai.djl.pytorch:pytorch-native-cu92:${pytorch_version}"
+        api "ai.djl.pytorch:pytorch-native-cu101:${pytorch_version}"
+        api "ai.djl.pytorch:pytorch-native-cu102:${pytorch_version}"
+        api "ai.djl.pytorch:pytorch-native-cpu-precxx11:${pytorch_version}-post0"
+        api "ai.djl.pytorch:pytorch-native-cu92-precxx11:${pytorch_version}-post0"
+        api "ai.djl.pytorch:pytorch-native-cu101-precxx11:${pytorch_version}-post0"
+        api "ai.djl.pytorch:pytorch-native-cu102-precxx11:${pytorch_version}-post0"
+        api "ai.djl.onnxruntime:onnxruntime-engine:${version}"
+        api "ai.djl.aws:aws-ai:${version}"
+        api "ai.djl.hadoop:hadoop:${version}"
+    }
+}
+
+project.tasks.withType(GenerateModuleMetadata) {
+    enabled = false
+}
+
+signing {
+    required(project.hasProperty("staging") || project.hasProperty("snapshot"))
+    def signingKey = findProperty("signingKey")
+    def signingPassword = findProperty("signingPassword")
+    useInMemoryPgpKeys(signingKey, signingPassword)
+    sign publishing.publications
+}
+
+publishing {
+    publications {
+        create("bom", MavenPublication) {
+            from(components["javaPlatform"])
+        }
+    }
+
+    repositories {
+        maven {
+            if (project.hasProperty("snapshot")) {
+                name = "snapshot"
+                url = "https://oss.sonatype.org/content/repositories/snapshots/"
+                credentials {
+                    username = findProperty("ossrhUsername")
+                    password = findProperty("ossrhPassword")
+                }
+            } else if (project.hasProperty("staging")) {
+                name = "staging"
+                url = "https://oss.sonatype.org/service/local/staging/deploy/maven2/"
+                credentials {
+                    username = findProperty("ossrhUsername")
+                    password = findProperty("ossrhPassword")
+                }
+            } else {
+                name = "local"
+                url = "build/repo"
+            }
+        }
+    }
+}

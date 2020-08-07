@@ -17,7 +17,6 @@ import ai.djl.Model;
 import ai.djl.basicdataset.CaptchaDataset;
 import ai.djl.basicmodelzoo.cv.classification.ResNetV1;
 import ai.djl.examples.training.util.Arguments;
-import ai.djl.examples.training.util.TrainingUtils;
 import ai.djl.metric.Metrics;
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
@@ -25,18 +24,20 @@ import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.Block;
 import ai.djl.nn.SequentialBlock;
 import ai.djl.training.DefaultTrainingConfig;
+import ai.djl.training.EasyTrain;
 import ai.djl.training.Trainer;
 import ai.djl.training.TrainingResult;
 import ai.djl.training.dataset.Dataset;
 import ai.djl.training.dataset.Dataset.Usage;
 import ai.djl.training.dataset.RandomAccessDataset;
 import ai.djl.training.evaluator.Accuracy;
+import ai.djl.training.listener.CheckpointsTrainingListener;
 import ai.djl.training.listener.TrainingListener;
 import ai.djl.training.loss.SimpleCompositeLoss;
 import ai.djl.training.loss.SoftmaxCrossEntropyLoss;
 import ai.djl.training.util.ProgressBar;
+import ai.djl.translate.TranslateException;
 import java.io.IOException;
-import java.nio.file.Paths;
 import org.apache.commons.cli.ParseException;
 
 /**
@@ -50,14 +51,15 @@ public final class TrainCaptcha {
 
     private TrainCaptcha() {}
 
-    public static void main(String[] args) throws IOException, ParseException {
+    public static void main(String[] args) throws IOException, ParseException, TranslateException {
         TrainCaptcha.runExample(args);
     }
 
-    public static TrainingResult runExample(String[] args) throws ParseException, IOException {
+    public static TrainingResult runExample(String[] args)
+            throws ParseException, IOException, TranslateException {
         Arguments arguments = Arguments.parseArgs(args);
 
-        try (Model model = Model.newInstance()) {
+        try (Model model = Model.newInstance("captcha")) {
             model.setBlock(getBlock());
 
             // get training and validation dataset
@@ -76,27 +78,24 @@ public final class TrainCaptcha {
                 // initialize trainer with proper input shape
                 trainer.initialize(inputShape);
 
-                TrainingUtils.fit(
-                        trainer,
-                        arguments.getEpoch(),
-                        trainingSet,
-                        validateSet,
-                        arguments.getOutputDir(),
-                        "captcha");
+                EasyTrain.fit(trainer, arguments.getEpoch(), trainingSet, validateSet);
 
-                TrainingResult result = trainer.getTrainingResult();
-                float accuracy = result.getValidateEvaluation("acc_digit_0");
-                model.setProperty("Epoch", String.valueOf(result.getEpoch()));
-                model.setProperty("Accuracy", String.format("%.5f", accuracy));
-                model.setProperty("Loss", String.format("%.5f", result.getValidateLoss()));
-
-                model.save(Paths.get(arguments.getOutputDir()), "captcha");
-                return result;
+                return trainer.getTrainingResult();
             }
         }
     }
 
     private static DefaultTrainingConfig setupTrainingConfig(Arguments arguments) {
+        String outputDir = arguments.getOutputDir();
+        CheckpointsTrainingListener listener = new CheckpointsTrainingListener(outputDir);
+        listener.setSaveModelCallback(
+                trainer -> {
+                    TrainingResult result = trainer.getTrainingResult();
+                    Model model = trainer.getModel();
+                    float accuracy = result.getValidateEvaluation("acc_digit_0");
+                    model.setProperty("Accuracy", String.format("%.5f", accuracy));
+                    model.setProperty("Loss", String.format("%.5f", result.getValidateLoss()));
+                });
         SimpleCompositeLoss loss = new SimpleCompositeLoss();
         for (int i = 0; i < CaptchaDataset.CAPTCHA_LENGTH; i++) {
             loss.addLoss(new SoftmaxCrossEntropyLoss("loss_digit_" + i), i);
@@ -105,8 +104,8 @@ public final class TrainCaptcha {
         DefaultTrainingConfig config =
                 new DefaultTrainingConfig(loss)
                         .optDevices(Device.getDevices(arguments.getMaxGpus()))
-                        .addTrainingListeners(
-                                TrainingListener.Defaults.logging(arguments.getOutputDir()));
+                        .addTrainingListeners(TrainingListener.Defaults.logging(outputDir))
+                        .addTrainingListeners(listener);
 
         for (int i = 0; i < CaptchaDataset.CAPTCHA_LENGTH; i++) {
             config.addEvaluator(new Accuracy("acc_digit_" + i, i));

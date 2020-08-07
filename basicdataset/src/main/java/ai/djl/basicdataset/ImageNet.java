@@ -12,13 +12,15 @@
  */
 package ai.djl.basicdataset;
 
-import ai.djl.repository.dataset.PreparedDataset;
+import ai.djl.modality.cv.transform.ToTensor;
 import ai.djl.training.dataset.Dataset;
+import ai.djl.translate.Pipeline;
+import ai.djl.util.JsonUtils;
 import ai.djl.util.Progress;
-import com.google.gson.Gson;
-import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -30,18 +32,17 @@ import java.util.Arrays;
  *
  * <p>Each image might have different {@link ai.djl.ndarray.types.Shape}s.
  */
-public class ImageNet extends AbstractImageFolder implements PreparedDataset {
+public class ImageNet extends AbstractImageFolder {
 
-    private Usage usage;
-    private boolean prepared;
     private String[] wordNetIds;
     private String[] classNames;
     private String[] classFull;
+    private Path root;
 
     ImageNet(Builder builder) {
         super(builder);
-        this.usage = builder.usage;
-        loadSynset();
+        String usagePath = getUsagePath(builder.usage);
+        root = Paths.get(resource.getRepository().getBaseUri()).resolve(usagePath);
     }
 
     /**
@@ -82,9 +83,10 @@ public class ImageNet extends AbstractImageFolder implements PreparedDataset {
 
     /** {@inheritDoc} */
     @Override
-    public void prepare(Progress progress) {
+    public void prepare(Progress progress) throws IOException {
         if (!prepared) {
-            File root = Paths.get(repository.getBaseUri()).resolve(getUsagePath(usage)).toFile();
+            resource.prepare(null, progress);
+
             if (progress != null) {
                 progress.reset("Preparing", 2);
                 progress.start(0);
@@ -93,7 +95,7 @@ public class ImageNet extends AbstractImageFolder implements PreparedDataset {
             } else {
                 listImages(root, Arrays.asList(wordNetIds));
             }
-
+            loadSynset();
             prepared = true;
         }
     }
@@ -106,11 +108,8 @@ public class ImageNet extends AbstractImageFolder implements PreparedDataset {
         if (classStream == null) {
             throw new AssertionError("Missing imagenet/classes.json in jar resource");
         }
-        String[][] classes =
-                new Gson()
-                        .fromJson(
-                                new InputStreamReader(classStream, StandardCharsets.UTF_8),
-                                String[][].class);
+        Reader reader = new InputStreamReader(classStream, StandardCharsets.UTF_8);
+        String[][] classes = JsonUtils.GSON.fromJson(reader, String[][].class);
         wordNetIds = new String[classes.length];
         classNames = new String[classes.length];
         classFull = new String[classes.length];
@@ -141,7 +140,7 @@ public class ImageNet extends AbstractImageFolder implements PreparedDataset {
     /** {@inheritDoc} */
     @Override
     protected Path getImagePath(String key) {
-        return Paths.get(repository.getBaseUri()).resolve(getUsagePath(usage)).resolve(key);
+        return root.resolve(key);
     }
 
     /** A builder for a {@link ImageNet}. */
@@ -174,6 +173,9 @@ public class ImageNet extends AbstractImageFolder implements PreparedDataset {
          * @return the {@link ImageNet}
          */
         public ImageNet build() {
+            if (pipeline == null) {
+                pipeline = new Pipeline(new ToTensor());
+            }
             return new ImageNet(this);
         }
     }

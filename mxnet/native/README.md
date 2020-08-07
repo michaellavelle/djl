@@ -1,11 +1,18 @@
-# DJL - MXNet native library
+# DJL - Apache MXNet native library
 
-## Publishing MXNet native library
+This module contains DJL released Apache MXNet binary files.
+The source of binary can be traced from the following two ways:
 
-### Step 1: Prepare MXNet native library
+- The binaries are built from source from [Apache MXNet](https://github.com/apache/incubator-mxnet) without modification.
+- The binaries are obtained from the Apache MXNet python pip wheel.
 
-Extract MXNet native library files from MXNet python pip wheel or build them from source.
-Make sure collect all dependencies. Use the following commands include all the libmxnet.so dependencies:
+## Publishing the Apache MXNet native library
+
+### Step 1: Prepare the MXNet native library
+
+Extract the Apache MXNet native library files from the Apache MXNet python pip wheel or build them from source.
+Make sure to collect all the dependencies. Use the following commands to include all the libmxnet.so dependencies:
+
 ```bash
 # osx
 otool -L libmxnet.dylib
@@ -18,9 +25,11 @@ dumpbin /dependents libmxnet.dll
 ```
 
 The example dependencies list for macOS mkl is:
-- libmxnet.dylib (Be sure to rename libmxnet.so to libmxnet.dylib for macOS)
+
+- libmxnet.dylib (be sure to rename libmxnet.so to libmxnet.dylib for macOS)
 
 The example dependencies list for Windows mkl is:
+
 - libmxnet.dll
 - libopenblas.dll
 - libgfortran-3.dll
@@ -28,14 +37,16 @@ The example dependencies list for Windows mkl is:
 - libgcc_s_seh-1.dll
 
 The example dependencies list for Linux mkl is:
+
 - libquadmath.so.0
 - libgfortran.so.3
 - libmxnet.so
 
 
-### Step 2: Upload files to s3 bucket
+### Step 2: Upload files to the s3 bucket
 
-The example list for s3 files is: 
+The example list of the s3 files is:
+
 - s3://djl-ai/publish/mxnet-1.6.0/linux/common/libgfortran.so.3
 - s3://djl-ai/publish/mxnet-1.6.0/linux/common/libquadmath.so.0
 - s3://djl-ai/publish/mxnet-1.6.0/linux/cu101mkl/libmxnet.so
@@ -57,24 +68,33 @@ Run the following commands to prepare your package:
 ```bash
 cd mxnet/native
 
-# Download native files and put into right folder
+# Download the native files and put them into the right folder
 ./gradlew dMNL
 
-# Publish to build/repo folder
+# Change the mxnet-native version in gradle.properties
+
+# There are three ways to build the new mxnet-native package for testing
+
+1. Publish to local build/repo folder
 ./gradlew publish
 
-# Publish to sonatype snapshot repo
-./gradlew publish -Psnapshot
+2. Publish to staging and use the new URL to test it
+./gradlew publish -Pstaging
+
+3. Publish to staging via the Github action
+curl -XPOST -u "USERNAME:PERSONAL_TOKEN" -H "Accept: application/vnd.github.everest-preview+json" -H "Content-Type: application/json" https://api.github.com/repos/USERNAME/RESPOSITORY_NAME/dispatches --data '{"event_type": “mxnet-staging-pub"}'
+
+# Test with the SSD Apache MXNet model
+./gradlew :example:run
+
+# After testing all three platforms(osx, linux, win), you can publish the package through sonatype.
 ```
 
-### Step 4: Use GitHub action to publish MXNet native library
+### Optional: Use GitHub actions to publish the Apache MXNet native library
 
-We have weekly GitHub pipeline to publish snapshot automatically. We can also use GitHub REST API to manually trigger a publish:
+We have a weekly GitHub pipeline that publishes the snapshots automatically. The pipeline can also be manually triggered using the GitHub REST API:
 
 ```bash
 # manually trigger publish a snapshot release
 curl -XPOST -u "USERNAME:PERSONAL_TOKEN" -H "Accept: application/vnd.github.everest-preview+json" -H "Content-Type: application/json" https://api.github.com/repos/USERNAME/RESPOSITORY_NAME/dispatches --data '{"event_type": “mxnet-snapshot-pub"}'
-
-# trigger publishing MXNet to sonatype stagging
-curl -XPOST -u "USERNAME:PERSONAL_TOKEN" -H "Accept: application/vnd.github.everest-preview+json" -H "Content-Type: application/json" https://api.github.com/repos/USERNAME/RESPOSITORY_NAME/dispatches --data '{"event_type": “mxnet-staging-pub"}'
 ```

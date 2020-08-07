@@ -27,12 +27,13 @@ import ai.djl.training.evaluator.Evaluator;
 import ai.djl.training.listener.EpochTrainingListener;
 import ai.djl.training.listener.EvaluatorTrainingListener;
 import ai.djl.training.listener.TrainingListener;
-import ai.djl.training.listener.TrainingListener.BatchData;
 import ai.djl.training.loss.Loss;
+import ai.djl.translate.TranslateException;
+import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Objects;
+import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,7 +47,7 @@ import org.slf4j.LoggerFactory;
  *
  * <ul>
  *   <li><a
- *       href="https://github.com/awslabs/djl/blob/master/jupyter/tutorial/train_your_first_model.ipynb">Training
+ *       href="https://github.com/awslabs/djl/blob/master/jupyter/tutorial/02_train_your_first_model.ipynb">Training
  *       your first model</a>
  *   <li><a
  *       href="https://github.com/awslabs/djl/blob/master/jupyter/transfer_learning_on_cifar10.ipynb">Training
@@ -69,7 +70,6 @@ public class Trainer implements AutoCloseable {
     private List<Evaluator> evaluators;
     private Loss loss;
     private DataManager dataManager;
-    long batchBeginTime;
 
     private boolean gradientsChecked;
 
@@ -86,20 +86,18 @@ public class Trainer implements AutoCloseable {
         devices = trainingConfig.getDevices();
         loss = trainingConfig.getLossFunction();
         dataManager = trainingConfig.getDataManager();
-        if (loss == null) {
-            throw new IllegalArgumentException("You must specify a loss for the trainer");
-        }
+        Objects.requireNonNull(loss, "You must specify a loss for the trainer");
         evaluators = new ArrayList<>(trainingConfig.getEvaluators());
         evaluators.add(loss); // track loss as an evaluator by default
 
-        // ParameterServer parameterServer = new MxParameterServer(trainingConfig.getOptimizer());
-        ParameterServer parameterServer = new LocalParameterServer(trainingConfig.getOptimizer());
+        ParameterServer parameterServer =
+                manager.getEngine().newParameterServer(trainingConfig.getOptimizer());
 
         parameterStore = new ParameterStore(manager, false);
         parameterStore.setParameterServer(parameterServer, devices);
 
         listeners = trainingConfig.getTrainingListeners();
-        listeners.forEach(listener -> listener.onTrainingBegin(this));
+        notifyListeners(listener -> listener.onTrainingBegin(this));
     }
 
     /**
@@ -125,8 +123,10 @@ public class Trainer implements AutoCloseable {
      *
      * @param dataset the dataset to iterate through
      * @return an {@link Iterable} of {@link Batch} that contains batches of data from the dataset
+     * @throws IOException for various exceptions depending on the dataset
+     * @throws TranslateException if there is an error while processing input
      */
-    public Iterable<Batch> iterateDataset(Dataset dataset) {
+    public Iterable<Batch> iterateDataset(Dataset dataset) throws IOException, TranslateException {
         return dataset.getData(getManager());
     }
 
@@ -140,43 +140,6 @@ public class Trainer implements AutoCloseable {
     }
 
     /**
-     * Trains the model with one iteration of the given {@link Batch} of data.
-     *
-     * @param batch a {@link Batch} that contains data, and its respective labels
-     * @throws IllegalArgumentException if the batch engine does not match the trainer engine
-     */
-    public void trainBatch(Batch batch) {
-        if (manager.getEngine() != batch.getManager().getEngine()) {
-            throw new IllegalArgumentException(
-                    "The data must be on the same engine as the trainer. You may need to change one of your NDManagers.");
-        }
-        Batch[] splits = batch.split(devices, false);
-        BatchData batchData =
-                new BatchData(batch, new ConcurrentHashMap<>(), new ConcurrentHashMap<>());
-        try (GradientCollector collector = newGradientCollector()) {
-            for (Batch split : splits) {
-                NDList data = dataManager.getData(split);
-                NDList labels = dataManager.getLabels(split);
-                NDList preds = forward(data);
-                long time = System.nanoTime();
-                NDArray lossValue = loss.evaluate(labels, preds);
-                collector.backward(lossValue);
-                addMetric("backward", time);
-                time = System.nanoTime();
-                batchData.getLabels().put(labels.get(0).getDevice(), labels);
-                batchData.getPredictions().put(preds.get(0).getDevice(), preds);
-                addMetric("training-metrics", time);
-            }
-        }
-
-        addMetric("train", batchBeginTime);
-        // count batch begin time at end of batch to include batch loading time
-        batchBeginTime = System.nanoTime();
-
-        listeners.forEach(listener -> listener.onTrainingBatch(this, batchData));
-    }
-
-    /**
      * Applies the forward function of the model once on the given input {@link NDList}.
      *
      * @param input the input {@link NDList}
@@ -185,41 +148,36 @@ public class Trainer implements AutoCloseable {
     public NDList forward(NDList input) {
         long begin = System.nanoTime();
         try {
-            return model.getBlock().forward(parameterStore, input);
+            return model.getBlock().forward(parameterStore, input, true);
         } finally {
             addMetric("forward", begin);
         }
     }
 
     /**
-     * Validates the given batch of data.
+     * Applies the forward function of the model once with both data and labels.
      *
-     * <p>During validation, the evaluators and losses are computed, but gradients aren't computed,
-     * and parameters aren't updated.
-     *
-     * @param batch a {@link Batch} of data
-     * @throws IllegalArgumentException if the batch engine does not match the trainer engine
+     * @param data the input data {@link NDList}
+     * @param labels the input labels {@link NDList}
+     * @return the output of the forward function
      */
-    public void validateBatch(Batch batch) {
-        if (manager.getEngine() != batch.getManager().getEngine()) {
-            throw new IllegalArgumentException(
-                    "The data must be on the same engine as the trainer. You may need to change one of your NDManagers.");
-        }
+    public NDList forward(NDList data, NDList labels) {
         long begin = System.nanoTime();
-        Batch[] splits = batch.split(devices, false);
-        BatchData batchData =
-                new BatchData(batch, new ConcurrentHashMap<>(), new ConcurrentHashMap<>());
-        for (Batch split : splits) {
-            NDList data = dataManager.getData(split);
-            NDList labels = dataManager.getLabels(split);
-
-            NDList preds = forward(data);
-            batchData.getLabels().put(labels.get(0).getDevice(), labels);
-            batchData.getPredictions().put(preds.get(0).getDevice(), preds);
+        try {
+            return model.getBlock().forward(parameterStore, data, labels, null);
+        } finally {
+            addMetric("forward", begin);
         }
-        addMetric("validate", begin);
+    }
 
-        listeners.forEach(listener -> listener.onValidationBatch(this, batchData));
+    /**
+     * Evaluates function of the model once on the given input {@link NDList}.
+     *
+     * @param input the input {@link NDList}
+     * @return the output of the predict function
+     */
+    public NDList evaluate(NDList input) {
+        return model.getBlock().forward(parameterStore, input, false, null);
     }
 
     /** Updates all of the parameters of the model once. */
@@ -256,13 +214,8 @@ public class Trainer implements AutoCloseable {
      *
      * @return the devices used for training
      */
-    public List<Device> getDevices() {
-        return Arrays.asList(devices);
-    }
-
-    /** Runs the end epoch actions. */
-    public void endEpoch() {
-        listeners.forEach(listener -> listener.onEpoch(this));
+    public Device[] getDevices() {
+        return devices;
     }
 
     /**
@@ -284,12 +237,30 @@ public class Trainer implements AutoCloseable {
     }
 
     /**
+     * Returns the {@link DataManager}.
+     *
+     * @return the {@link DataManager}
+     */
+    public DataManager getDataManager() {
+        return dataManager;
+    }
+
+    /**
      * Gets all {@link Evaluator}s.
      *
      * @return the evaluators used during training
      */
     public List<Evaluator> getEvaluators() {
         return evaluators;
+    }
+
+    /**
+     * Executes a method on each of the {@link TrainingListener}s.
+     *
+     * @param listenerConsumer a consumer that executes the method
+     */
+    public void notifyListeners(Consumer<TrainingListener> listenerConsumer) {
+        listeners.forEach(listenerConsumer);
     }
 
     /**
@@ -325,7 +296,7 @@ public class Trainer implements AutoCloseable {
     protected void finalize() throws Throwable {
         if (manager.isOpen()) {
             if (logger.isDebugEnabled()) {
-                logger.warn("Model was not closed explicitly: {}", getClass().getSimpleName());
+                logger.warn("Trainer for {} was not closed explicitly.", model.getName());
             }
             close();
         }
@@ -335,7 +306,7 @@ public class Trainer implements AutoCloseable {
     /** {@inheritDoc} */
     @Override
     public void close() {
-        listeners.forEach(listener -> listener.onTrainingEnd(this));
+        notifyListeners(listener -> listener.onTrainingEnd(this));
 
         parameterStore.sync();
         manager.close();
@@ -381,7 +352,13 @@ public class Trainer implements AutoCloseable {
         gradientsChecked = true;
     }
 
-    private void addMetric(String metricName, long begin) {
+    /**
+     * Helper to add a metric for a time difference.
+     *
+     * @param metricName the metric name
+     * @param begin the time difference start (this method is called at the time difference end)
+     */
+    public void addMetric(String metricName, long begin) {
         if (metrics != null && begin > 0L) {
             metrics.addMetric(metricName, System.nanoTime() - begin);
         }

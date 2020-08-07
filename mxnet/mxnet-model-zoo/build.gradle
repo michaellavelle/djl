@@ -10,7 +10,7 @@ dependencies {
     api project(":api")
     api project(":mxnet:mxnet-engine")
 
-    testRuntimeOnly "ai.djl.mxnet:mxnet-native-auto:${mxnet_version}-SNAPSHOT"
+    testRuntimeOnly "ai.djl.mxnet:mxnet-native-auto:${mxnet_version}"
     testImplementation project(":basicdataset")
     testImplementation project(":model-zoo")
     testImplementation(project(":testing"))
@@ -34,8 +34,8 @@ publishing {
     publications {
         maven(MavenPublication) {
             pom {
-                name = "MXNet model zoo"
-                description = "MXNet model zoo for DJL"
+                name = "DJL model zoo for Apache MXNet"
+                description = "Deep Java Library (DJL) model zoo for Apache MXNet"
                 url = "http://www.djl.ai/mxnet/${project.name}"
             }
         }

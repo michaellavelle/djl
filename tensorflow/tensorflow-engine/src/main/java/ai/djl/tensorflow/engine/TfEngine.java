@@ -15,10 +15,13 @@ package ai.djl.tensorflow.engine;
 import ai.djl.Device;
 import ai.djl.Model;
 import ai.djl.engine.Engine;
+import ai.djl.engine.StandardCapabilities;
 import ai.djl.ndarray.NDManager;
 import ai.djl.training.GradientCollector;
+import ai.djl.util.Platform;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.tensorflow.EagerSession;
 import org.tensorflow.TensorFlow;
 
 /**
@@ -39,6 +42,8 @@ public final class TfEngine extends Engine {
     static TfEngine newInstance() {
         try {
             LibUtils.loadLibrary();
+            EagerSession.getDefault();
+
             return new TfEngine();
         } catch (Throwable e) {
             logger.warn("Failed load TensorFlow native library.", e);
@@ -48,8 +53,8 @@ public final class TfEngine extends Engine {
 
     /** {@inheritDoc} */
     @Override
-    public Model newModel(Device device) {
-        return new TfModel(device);
+    public Model newModel(String name, Device device) {
+        return new TfModel(name, device);
     }
 
     /** {@inheritDoc} */
@@ -67,6 +72,11 @@ public final class TfEngine extends Engine {
     /** {@inheritDoc} */
     @Override
     public boolean hasCapability(String capability) {
+        if (StandardCapabilities.MKL.equals(capability)) {
+            return true;
+        } else if (StandardCapabilities.CUDA.equals(capability)) {
+            return Platform.fromSystem().getCudaArch() != null;
+        }
         return false;
     }
 
@@ -90,5 +100,7 @@ public final class TfEngine extends Engine {
 
     /** {@inheritDoc} */
     @Override
-    public void setRandomSeed(int seed) {}
+    public void setRandomSeed(int seed) {
+        TfNDManager.setRandomSeed(seed);
+    }
 }

@@ -15,7 +15,6 @@ package ai.djl.modality.nlp.embedding;
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDArrays;
 import ai.djl.ndarray.NDList;
-import ai.djl.ndarray.NDManager;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -35,28 +34,27 @@ public class SimpleTextEmbedding implements TextEmbedding {
 
     /** {@inheritDoc} */
     @Override
-    public NDArray preprocessTextToEmbed(NDManager manager, List<String> text) {
-        NDList result = new NDList(text.size());
-        for (String token : text) {
-            result.add(wordEmbedding.preprocessWordToEmbed(manager, token));
+    public long[] preprocessTextToEmbed(List<String> text) {
+        long[] result = new long[text.size()];
+        for (int i = 0; i < text.size(); i++) {
+            result[i] = wordEmbedding.preprocessWordToEmbed(text.get(i));
         }
-        return NDArrays.stack(result);
+        return result;
     }
 
     /** {@inheritDoc} */
     @Override
-    public NDArray embedText(NDArray text) throws EmbeddingException {
-        NDList split = text.split(text.getShape().get(0));
+    public NDArray embedText(NDArray textIndices) throws EmbeddingException {
         NDList result = new NDList();
-        for (NDArray token : split) {
-            result.add(wordEmbedding.embedWord(token.get(0)));
+        for (int i = 0; i < textIndices.size(); i++) {
+            result.add(wordEmbedding.embedWord(textIndices.get(i)));
         }
         return NDArrays.stack(result);
     }
 
     /** {@inheritDoc} */
     @Override
-    public List<String> unembedText(NDArray textEmbedding) throws EmbeddingException {
+    public List<String> unembedText(NDArray textEmbedding) {
         NDList split = textEmbedding.split(textEmbedding.getShape().get(0));
         List<String> result = new ArrayList<>(split.size());
         for (NDArray token : split) {

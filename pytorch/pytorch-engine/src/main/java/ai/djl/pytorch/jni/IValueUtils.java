@@ -56,12 +56,12 @@ public final class IValueUtils {
     }
 
     /**
-     * Check IValue is a container of IValue Array.
+     * Check IValue is a container of IValue List.
      *
      * @param iValueHandle IValue {@link Pointer}
      * @return result
      */
-    public static boolean isArray(Pointer iValueHandle) {
+    public static boolean isList(Pointer iValueHandle) {
         return PyTorchLibrary.LIB.iValueIsList(iValueHandle);
     }
 
@@ -167,11 +167,9 @@ public final class IValueUtils {
             list.add(toNDArray(iValueHandle, manager));
         } else if (isNDList(iValueHandle)) {
             list.addAll(toNDList(iValueHandle, manager));
-        } else if (isTuple(iValueHandle) || isArray(iValueHandle)) {
-            // Try to extract from Tuple/List
-            Pointer[] results = toIValueArray(iValueHandle);
-            for (Pointer ptr : results) {
-                list.addAll(forwardHelper(ptr, manager));
+        } else if (isList(iValueHandle) || isTuple(iValueHandle)) {
+            for (Pointer handle : toIValueArray(iValueHandle)) {
+                list.addAll(forwardHelper(handle, manager));
             }
         } else if (isMap(iValueHandle)) {
             // Only allows <String, NDArray> type of map
@@ -199,17 +197,18 @@ public final class IValueUtils {
     /**
      * Run the forward of PyTorch module.
      *
-     * @param block the block that contains PyTorch module.
+     * @param block the block that contains PyTorch module
      * @param inputs input {@link NDList}
+     * @param isTrain is running on training mode
      * @return result {@link NDList}
      */
-    public static NDList forward(PtSymbolBlock block, NDList inputs) {
+    public static NDList forward(PtSymbolBlock block, NDList inputs, boolean isTrain) {
         Pointer[] arrayHandles =
                 inputs.stream()
                         .map(input -> ((PtNDArray) input).getHandle())
                         .toArray(Pointer[]::new);
 
-        Pointer result = PyTorchLibrary.LIB.moduleForward(block.getHandle(), arrayHandles);
+        Pointer result = PyTorchLibrary.LIB.moduleForward(block.getHandle(), arrayHandles, isTrain);
         PtNDManager manager = (PtNDManager) inputs.get(0).getManager();
         return forwardHelper(result, manager);
     }

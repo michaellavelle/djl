@@ -1,19 +1,29 @@
-# DJL - model zoo
+# Model Zoo
 
 ## Introduction
 
-The Deep Java Library (DJL) model zoo contains framework-agnostic models. All the models have a built-in Translator and
+The Deep Java Library (DJL) model zoo contains engine-agnostic models. All the models have a built-in Translator and
 can be used for inference out of the box.
+
+You can find general ModelZoo and model loading document here:
+
+- [Model Zoo](../docs/model-zoo.md)
+- [How to load model](../docs/load_model.md)
 
 ## Documentation
 
-The latest javadocs can be found on the [djl.ai website](https://javadoc.djl.ai/model-zoo/0.4.0/index.html).
+The latest javadocs can be found on the [djl.ai website](https://javadoc.io/doc/ai.djl/model-zoo/latest/index.html).
 
 You can also build the latest javadocs locally using the following command:
 
 ```sh
+# for Linux/macOS:
 ./gradlew javadoc
+
+# for Windows:
+..\gradlew javadoc
 ```
+
 The javadocs output is built in the build/doc/javadoc folder.
 
 ## Installation
@@ -23,7 +33,7 @@ You can pull the model zoo from the central Maven repository by including the fo
 <dependency>
     <groupId>ai.djl</groupId>
     <artifactId>model-zoo</artifactId>
-    <version>0.4.0</version>
+    <version>0.6.0</version>
 </dependency>
 ```
 
@@ -42,45 +52,29 @@ model found is returned. A *ModelNotFoundException* will be thrown if no matchin
 The following is an example of the criteria to find a Resnet50-v1 model that has been trained on the imagenet dataset:
 
 ```java
-    Criteria<BufferedImage, Classification> criteria =
+    Criteria<Image, Classification> criteria =
             Criteria.builder()
                     .optApplication(Application.CV.OBJECT_DETECTION)
-                    .setTypes(BufferedImage.class, Classification.class)
+                    .setTypes(Image.class, Classification.class)
                     .optFilter("layer", "50")
                     .optFilter("flavor", "v1")
                     .optFilter("dataset", "cifar10")
                     .build();
 
-    ZooModel<BufferedImage, Classification> ssd = ModelZoo.loadModel(criteria));
+    ZooModel<Image, Classification> ssd = ModelZoo.loadModel(criteria));
 ```
 
 If you already known which `ModelLoader` to use, you can simply do the following:
+
 ```java
     Map<String, String> filter = new HashMap<>();
     filter.put("layers", "50");
     filter.put("flavor", "v1");
     filter.put("dataset", "cifar10");
 
-    ZooModel<BufferedImage, Classification> model = BasicModelZoo.RESNET.loadModel(filter);
+    ZooModel<Image, Classification> model = BasicModelZoo.RESNET.loadModel(filter);
 ```
 
-### List available models
-
-You can use [ModelZoo.listModels()](../api/src/main/java/ai/djl/repository/zoo/ModelZoo.java) API to query available models.
-
-Use the following command to list built-in models in examples module:
-```shell script
-./gradlew :examples:run -Dmain=ai.djl.examples.inference.ListModels
-
-[INFO ] - CV.ACTION_RECOGNITION ai.djl.mxnet:action_recognition:0.0.1 {"backbone":"vgg16","dataset":"ucf101"}
-[INFO ] - CV.ACTION_RECOGNITION ai.djl.mxnet:action_recognition:0.0.1 {"backbone":"inceptionv3","dataset":"ucf101"}
-[INFO ] - CV.IMAGE_CLASSIFICATION ai.djl.zoo:resnet:0.0.1 {"layers":"50","flavor":"v1","dataset":"cifar10"}
-[INFO ] - CV.IMAGE_CLASSIFICATION ai.djl.zoo:mlp:0.0.2 {"dataset":"mnist"}
-[INFO ] - NLP.QUESTION_ANSWER ai.djl.mxnet:bertqa:0.0.1 {"backbone":"bert","dataset":"book_corpus_wiki_en_uncased"}
-
-...
-
-```
 
 ## Contributor Guides and Documentation
 

@@ -10,7 +10,7 @@
  * OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
  * and limitations under the License.
  */
-#include "../build/include/ai_djl_pytorch_jni_PyTorchLibrary.h"
+#include "ai_djl_pytorch_jni_PyTorchLibrary.h"
 #include "djl_pytorch_jni_error.h"
 #include "djl_pytorch_jni_utils.h"
 
@@ -91,5 +91,23 @@ JNIEXPORT jobject JNICALL Java_ai_djl_pytorch_jni_PyTorchLibrary_torchSort(
   const auto* tensor_ptr = utils::GetPointerFromJHandle<torch::Tensor>(env, jhandle);
   const auto* result_ptr = new torch::Tensor(std::get<0>(tensor_ptr->sort(jdim, jdescending == JNI_TRUE)));
   return utils::CreatePointer<torch::Tensor>(env, result_ptr);
+  API_END();
+}
+
+JNIEXPORT jobject JNICALL Java_ai_djl_pytorch_jni_PyTorchLibrary_torchIsNaN(
+  JNIEnv* env, jobject jthis, jobject jhandle) {
+  API_BEGIN();
+    const auto* tensor_ptr = utils::GetPointerFromJHandle<torch::Tensor>(env, jhandle);
+    const auto* result_ptr = new torch::Tensor(torch::isnan(*tensor_ptr));
+    return utils::CreatePointer<torch::Tensor>(env, result_ptr);
+  API_END();
+}
+
+JNIEXPORT jobject JNICALL Java_ai_djl_pytorch_jni_PyTorchLibrary_torchIsInf(
+  JNIEnv* env, jobject jthis, jobject jhandle) {
+  API_BEGIN();
+    const auto* tensor_ptr = utils::GetPointerFromJHandle<torch::Tensor>(env, jhandle);
+    const auto* result_ptr = new torch::Tensor(torch::isinf(*tensor_ptr));
+    return utils::CreatePointer<torch::Tensor>(env, result_ptr);
   API_END();
 }

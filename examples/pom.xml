@@ -5,12 +5,13 @@
 
     <groupId>ai.djl</groupId>
     <artifactId>examples</artifactId>
-    <version>0.5.0-SNAPSHOT</version>
+    <version>0.6.0-SNAPSHOT</version>
 
     <properties>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
-        <djl.version>0.5.0-SNAPSHOT</djl.version>
+        <djl.version>0.7.0-SNAPSHOT</djl.version>
+        <exec.mainClass>ai.djl.examples.inference.ObjectDetection</exec.mainClass>
     </properties>
 
     <repositories>
@@ -67,7 +68,7 @@
             -->
             <groupId>ai.djl.mxnet</groupId>
             <artifactId>mxnet-native-auto</artifactId>
-            <version>1.7.0-a-SNAPSHOT</version>
+            <version>1.7.0-b</version>
             <scope>runtime</scope>
         </dependency>
 

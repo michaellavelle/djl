@@ -19,17 +19,16 @@ import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.NDManager;
 import ai.djl.translate.TranslatorContext;
-import ai.djl.util.Utils;
 import java.io.IOException;
 import java.util.List;
 
 /** A generic {@link ai.djl.translate.Translator} for Image Classification tasks. */
 public class ImageClassificationTranslator extends BaseImageTranslator<Classifications> {
 
-    private String synsetArtifactName;
+    private SynsetLoader synsetLoader;
     private boolean applySoftmax;
 
-    private List<String> synset;
+    private List<String> classes;
 
     /**
      * Constructs an Image Classification using {@link Builder}.
@@ -38,24 +37,26 @@ public class ImageClassificationTranslator extends BaseImageTranslator<Classific
      */
     public ImageClassificationTranslator(Builder builder) {
         super(builder);
-        this.synsetArtifactName = builder.synsetArtifactName;
+        this.synsetLoader = builder.synsetLoader;
         this.applySoftmax = builder.applySoftmax;
     }
 
     /** {@inheritDoc} */
     @Override
     public void prepare(NDManager manager, Model model) throws IOException {
-        synset = model.getArtifact(synsetArtifactName, Utils::readLines);
+        if (classes == null) {
+            classes = synsetLoader.load(model);
+        }
     }
 
     /** {@inheritDoc} */
     @Override
-    public Classifications processOutput(TranslatorContext ctx, NDList list) throws IOException {
+    public Classifications processOutput(TranslatorContext ctx, NDList list) {
         NDArray probabilitiesNd = list.singletonOrThrow();
         if (applySoftmax) {
             probabilitiesNd = probabilitiesNd.softmax(0);
         }
-        return new Classifications(synset, probabilitiesNd);
+        return new Classifications(classes, probabilitiesNd);
     }
 
     /**
@@ -68,23 +69,11 @@ public class ImageClassificationTranslator extends BaseImageTranslator<Classific
     }
 
     /** A Builder to construct a {@code ImageClassificationTranslator}. */
-    public static class Builder extends BaseBuilder<Builder> {
+    public static class Builder extends ClassificationBuilder<Builder> {
 
-        private String synsetArtifactName;
         private boolean applySoftmax;
 
         Builder() {}
-
-        /**
-         * Sets the name of the synset file listing the potential classes for an image.
-         *
-         * @param synsetArtifactName a file listing the potential classes for an image
-         * @return the builder
-         */
-        public Builder setSynsetArtifactName(String synsetArtifactName) {
-            this.synsetArtifactName = synsetArtifactName;
-            return this;
-        }
 
         /**
          * Sets whether to apply softmax when processing output. Some models already include softmax
@@ -110,9 +99,7 @@ public class ImageClassificationTranslator extends BaseImageTranslator<Classific
          * @return an {@link ImageClassificationTranslator}
          */
         public ImageClassificationTranslator build() {
-            if (synsetArtifactName == null) {
-                throw new IllegalArgumentException("You must specify a synset artifact name");
-            }
+            validate();
             return new ImageClassificationTranslator(this);
         }
     }

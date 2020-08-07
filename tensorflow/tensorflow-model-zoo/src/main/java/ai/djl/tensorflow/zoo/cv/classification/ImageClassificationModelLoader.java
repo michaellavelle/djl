@@ -16,12 +16,12 @@ import ai.djl.Application;
 import ai.djl.Device;
 import ai.djl.MalformedModelException;
 import ai.djl.modality.Classifications;
+import ai.djl.modality.cv.Image;
 import ai.djl.modality.cv.transform.Resize;
 import ai.djl.modality.cv.translator.ImageClassificationTranslator;
 import ai.djl.modality.cv.translator.wrapper.FileTranslatorFactory;
 import ai.djl.modality.cv.translator.wrapper.InputStreamTranslatorFactory;
 import ai.djl.modality.cv.translator.wrapper.UrlTranslatorFactory;
-import ai.djl.modality.cv.util.NDImageUtils;
 import ai.djl.repository.MRL;
 import ai.djl.repository.Repository;
 import ai.djl.repository.zoo.BaseModelLoader;
@@ -29,12 +29,10 @@ import ai.djl.repository.zoo.Criteria;
 import ai.djl.repository.zoo.ModelNotFoundException;
 import ai.djl.repository.zoo.ZooModel;
 import ai.djl.tensorflow.zoo.TfModelZoo;
-import ai.djl.translate.Pipeline;
 import ai.djl.translate.Translator;
 import ai.djl.translate.TranslatorFactory;
 import ai.djl.util.Pair;
 import ai.djl.util.Progress;
-import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
@@ -43,7 +41,7 @@ import java.util.Map;
 
 /** Model loader for Image Classification models. */
 public abstract class ImageClassificationModelLoader
-        extends BaseModelLoader<BufferedImage, Classifications> {
+        extends BaseModelLoader<Image, Classifications> {
 
     private static final Application APPLICATION = Application.CV.IMAGE_CLASSIFICATION;
     private static final String GROUP_ID = TfModelZoo.GROUP_ID;
@@ -57,10 +55,10 @@ public abstract class ImageClassificationModelLoader
      */
     public ImageClassificationModelLoader(
             Repository repository, String artifactId, String version) {
-        super(repository, MRL.model(APPLICATION, GROUP_ID, artifactId), version);
+        super(repository, MRL.model(APPLICATION, GROUP_ID, artifactId), version, new TfModelZoo());
         FactoryImpl factory = new FactoryImpl();
 
-        factories.put(new Pair<>(BufferedImage.class, Classifications.class), factory);
+        factories.put(new Pair<>(Image.class, Classifications.class), factory);
         factories.put(
                 new Pair<>(Path.class, Classifications.class),
                 new FileTranslatorFactory<>(factory));
@@ -89,12 +87,12 @@ public abstract class ImageClassificationModelLoader
      * @throws MalformedModelException if the model data is malformed
      */
     @Override
-    public ZooModel<BufferedImage, Classifications> loadModel(
+    public ZooModel<Image, Classifications> loadModel(
             Map<String, String> filters, Device device, Progress progress)
             throws IOException, ModelNotFoundException, MalformedModelException {
-        Criteria<BufferedImage, Classifications> criteria =
+        Criteria<Image, Classifications> criteria =
                 Criteria.builder()
-                        .setTypes(BufferedImage.class, Classifications.class)
+                        .setTypes(Image.class, Classifications.class)
                         .optFilters(filters)
                         .optDevice(device)
                         .optProgress(progress)
@@ -102,25 +100,18 @@ public abstract class ImageClassificationModelLoader
         return loadModel(criteria);
     }
 
-    private static final class FactoryImpl
-            implements TranslatorFactory<BufferedImage, Classifications> {
+    private static final class FactoryImpl implements TranslatorFactory<Image, Classifications> {
 
         /** {@inheritDoc} */
         @Override
-        public Translator<BufferedImage, Classifications> newInstance(
-                Map<String, Object> arguments) {
+        public Translator<Image, Classifications> newInstance(Map<String, Object> arguments) {
             int width = ((Double) arguments.getOrDefault("width", 224d)).intValue();
             int height = ((Double) arguments.getOrDefault("height", 224d)).intValue();
-            String flag = (String) arguments.getOrDefault("flag", NDImageUtils.Flag.COLOR.name());
-
-            Pipeline pipeline = new Pipeline();
-            pipeline.add(new Resize(width, height));
+            String flag = (String) arguments.getOrDefault("flag", Image.Flag.COLOR.name());
 
             return ImageClassificationTranslator.builder()
-                    .optFlag(NDImageUtils.Flag.valueOf(flag))
-                    .setPipeline(pipeline)
-                    .setSynsetArtifactName("synset.txt")
-                    .optApplySoftmax(false)
+                    .optFlag(Image.Flag.valueOf(flag))
+                    .addTransform(new Resize(width, height))
                     .build();
         }
     }

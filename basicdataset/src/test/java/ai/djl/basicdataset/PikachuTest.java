@@ -12,11 +12,9 @@
  */
 package ai.djl.basicdataset;
 
-import ai.djl.Application.CV;
 import ai.djl.Model;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.Blocks;
-import ai.djl.repository.MRL;
 import ai.djl.training.DefaultTrainingConfig;
 import ai.djl.training.Trainer;
 import ai.djl.training.TrainingConfig;
@@ -24,6 +22,7 @@ import ai.djl.training.dataset.Batch;
 import ai.djl.training.dataset.Dataset;
 import ai.djl.training.initializer.NormalInitializer;
 import ai.djl.training.loss.Loss;
+import ai.djl.translate.TranslateException;
 import java.io.IOException;
 import java.util.Iterator;
 import org.testng.Assert;
@@ -32,17 +31,18 @@ import org.testng.annotations.Test;
 public class PikachuTest {
 
     @Test
-    public void testPikachuRemote() throws IOException {
+    public void testPikachuRemote() throws IOException, TranslateException {
         PikachuDetection pikachu =
-                new PikachuDetectionUnitTest(
-                        PikachuDetection.builder()
-                                .optUsage(Dataset.Usage.TEST)
-                                .setSampling(1, true));
-        pikachu.prepare();
+                PikachuDetection.builder()
+                        .optArtifactId("pikachu-unittest")
+                        .optUsage(Dataset.Usage.TEST)
+                        .setSampling(1, true)
+                        .optLimit(10)
+                        .build();
         TrainingConfig config =
                 new DefaultTrainingConfig(Loss.softmaxCrossEntropyLoss())
                         .optInitializer(new NormalInitializer(0.01f));
-        try (Model model = Model.newInstance()) {
+        try (Model model = Model.newInstance("model")) {
             model.setBlock(Blocks.identityBlock());
             try (Trainer trainer = model.newTrainer(config)) {
                 Iterator<Batch> ds = trainer.iterateDataset(pikachu).iterator();
@@ -52,19 +52,6 @@ public class PikachuTest {
                 Assert.assertEquals(
                         batch.getLabels().singletonOrThrow().getShape(), new Shape(1, 1, 5));
             }
-        }
-    }
-
-    private static final class PikachuDetectionUnitTest extends PikachuDetection {
-
-        PikachuDetectionUnitTest(PikachuDetection.Builder builder) {
-            super(builder);
-        }
-
-        /** {@inheritDoc} */
-        @Override
-        public MRL getMrl() {
-            return MRL.dataset(CV.OBJECT_DETECTION, BasicDatasets.GROUP_ID, "pikachu-unittest");
         }
     }
 }

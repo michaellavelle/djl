@@ -15,21 +15,18 @@ package ai.djl.examples.inference;
 import ai.djl.Application;
 import ai.djl.ModelException;
 import ai.djl.inference.Predictor;
-import ai.djl.modality.cv.ImageVisualization;
+import ai.djl.modality.cv.Image;
+import ai.djl.modality.cv.ImageFactory;
 import ai.djl.modality.cv.output.DetectedObjects;
-import ai.djl.modality.cv.util.BufferedImageUtils;
 import ai.djl.repository.zoo.Criteria;
 import ai.djl.repository.zoo.ModelZoo;
 import ai.djl.repository.zoo.ZooModel;
 import ai.djl.training.util.ProgressBar;
 import ai.djl.translate.TranslateException;
-import java.awt.Graphics2D;
-import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import javax.imageio.ImageIO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,20 +50,20 @@ public final class InstanceSegmentation {
 
     public static DetectedObjects predict() throws IOException, ModelException, TranslateException {
         Path imageFile = Paths.get("src/test/resources/segmentation.jpg");
-        BufferedImage img = BufferedImageUtils.fromFile(imageFile);
+        Image img = ImageFactory.getInstance().fromFile(imageFile);
 
-        Criteria<BufferedImage, DetectedObjects> criteria =
+        Criteria<Image, DetectedObjects> criteria =
                 Criteria.builder()
                         .optApplication(Application.CV.INSTANCE_SEGMENTATION)
-                        .setTypes(BufferedImage.class, DetectedObjects.class)
+                        .setTypes(Image.class, DetectedObjects.class)
                         .optFilter("backbone", "resnet18")
                         .optFilter("flavor", "v1b")
                         .optFilter("dataset", "coco")
                         .optProgress(new ProgressBar())
                         .build();
 
-        try (ZooModel<BufferedImage, DetectedObjects> model = ModelZoo.loadModel(criteria)) {
-            try (Predictor<BufferedImage, DetectedObjects> predictor = model.newPredictor()) {
+        try (ZooModel<Image, DetectedObjects> model = ModelZoo.loadModel(criteria)) {
+            try (Predictor<Image, DetectedObjects> predictor = model.newPredictor()) {
                 DetectedObjects detection = predictor.predict(img);
                 saveBoundingBoxImage(img, detection);
                 return detection;
@@ -74,21 +71,17 @@ public final class InstanceSegmentation {
         }
     }
 
-    private static void saveBoundingBoxImage(BufferedImage img, DetectedObjects detection)
+    private static void saveBoundingBoxImage(Image img, DetectedObjects detection)
             throws IOException {
         Path outputDir = Paths.get("build/output");
         Files.createDirectories(outputDir);
 
         // Make image copy with alpha channel because original image was jpg
-        BufferedImage newImage =
-                new BufferedImage(img.getWidth(), img.getHeight(), BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g = newImage.createGraphics();
-        g.drawImage(img, 0, 0, null);
-        g.dispose();
-        ImageVisualization.drawBoundingBoxes(newImage, detection);
+        Image newImage = img.duplicate(Image.Type.TYPE_INT_ARGB);
+        newImage.drawBoundingBoxes(detection);
 
         Path imagePath = outputDir.resolve("instances.png");
-        ImageIO.write(newImage, "png", imagePath.toFile());
+        newImage.save(Files.newOutputStream(imagePath), "png");
         logger.info("Segmentation result image has been saved in: {}", imagePath);
     }
 }

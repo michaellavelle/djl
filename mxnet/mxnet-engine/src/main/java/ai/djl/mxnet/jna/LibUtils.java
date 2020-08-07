@@ -28,6 +28,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -102,19 +103,20 @@ public final class LibUtils {
     }
 
     private static synchronized String findLibraryInClasspath() {
-        List<URL> urls;
+        Enumeration<URL> urls;
         try {
             urls =
-                    Collections.list(
-                            Thread.currentThread()
-                                    .getContextClassLoader()
-                                    .getResources("native/lib/mxnet.properties"));
+                    Thread.currentThread()
+                            .getContextClassLoader()
+                            .getResources("native/lib/mxnet.properties");
         } catch (IOException e) {
+            logger.warn("", e);
             return null;
         }
 
         // No native jars
-        if (urls.isEmpty()) {
+        if (!urls.hasMoreElements()) {
+            logger.debug("mxnet.properties not found in class path.");
             return null;
         }
 
@@ -122,7 +124,8 @@ public final class LibUtils {
         try {
             Platform matching = null;
             Platform placeholder = null;
-            for (URL url : urls) {
+            while (urls.hasMoreElements()) {
+                URL url = urls.nextElement();
                 Platform platform = Platform.fromUrl(url);
                 if (platform.isPlaceholder()) {
                     placeholder = platform;
@@ -155,28 +158,26 @@ public final class LibUtils {
     private static String loadLibraryFromClasspath(Platform platform) {
         Path tmp = null;
         try {
-            String userHome = System.getProperty("user.home");
             String libName = System.mapLibraryName(LIB_NAME);
-            Path dir =
-                    Paths.get(
-                            userHome,
-                            ".mxnet/cache/" + platform.getVersion() + platform.getClassifier());
+            Path cacheFolder = getCacheDir();
+            logger.debug("Using cache dir: {}", cacheFolder);
+
+            Path dir = cacheFolder.resolve(platform.getVersion() + platform.getClassifier());
             Path path = dir.resolve(libName);
             if (Files.exists(path)) {
                 return path.toAbsolutePath().toString();
             }
-            tmp = Paths.get(userHome, ".mxnet/cache/tmp");
-            Files.createDirectories(tmp);
+            Files.createDirectories(cacheFolder);
+            tmp = Files.createTempDirectory(cacheFolder, "tmp");
             for (String file : platform.getLibraries()) {
                 String libPath = "/native/lib/" + file;
                 try (InputStream is = LibUtils.class.getResourceAsStream(libPath)) {
+                    logger.info("Extracting {} to cache ...", file);
                     Files.copy(is, tmp.resolve(file), StandardCopyOption.REPLACE_EXISTING);
                 }
             }
 
-            Utils.deleteQuietly(dir);
-            Files.move(tmp, dir);
-            tmp = null;
+            Utils.moveQuietly(tmp, dir);
             return path.toAbsolutePath().toString();
         } catch (IOException e) {
             throw new IllegalStateException("Failed to extract MXNet native library", e);
@@ -265,16 +266,17 @@ public final class LibUtils {
         String cudaArch = platform.getCudaArch();
         String os = platform.getOsPrefix();
 
-        String userHome = System.getProperty("user.home");
         String libName = System.mapLibraryName(LIB_NAME);
-        Path dir = Paths.get(userHome, ".mxnet/cache/" + version + flavor + '-' + classifier);
+        Path cacheFolder = getCacheDir();
+        logger.debug("Using cache dir: {}", cacheFolder);
+        Path dir = cacheFolder.resolve(version + flavor + '-' + classifier);
         Path path = dir.resolve(libName);
         if (Files.exists(path)) {
             return path.toAbsolutePath().toString();
         }
 
-        Path tmp = Paths.get(userHome, ".mxnet/cache/tmp");
-        Files.createDirectories(tmp);
+        Files.createDirectories(cacheFolder);
+        Path tmp = Files.createTempDirectory(cacheFolder, "tmp");
 
         Matcher matcher = VERSION_PATTERN.matcher(version);
         if (!matcher.matches()) {
@@ -311,10 +313,7 @@ public final class LibUtils {
 
                 // check again in case fallback to cpu
                 if ("mkl".equals(flavor)) {
-                    dir =
-                            Paths.get(
-                                    userHome,
-                                    ".mxnet/cache/" + version + flavor + '-' + classifier);
+                    dir = cacheFolder.resolve(version + flavor + '-' + classifier);
                     path = dir.resolve(libName);
                     if (Files.exists(path)) {
                         return path.toAbsolutePath().toString();
@@ -329,27 +328,45 @@ public final class LibUtils {
                     if ("win".equals(os)) {
                         if ("libmxnet.dll".equals(fileName)) {
                             fileName = "mxnet.dll";
-                        } else if ("libcumxnet.dll".equals(fileName)) {
-                            fileName = "mxnet.dll";
-                        } else if (fileName.startsWith("mxnet_")
-                                && !("mxnet_" + cudaArch + ".dll").equals(fileName)) {
-                            continue;
+                        } else if (fileName.startsWith("mxnet_")) {
+                            if (!("mxnet_" + cudaArch + ".dll").equals(fileName)) {
+                                continue;
+                            }
+                            fileName = "mxnet.dll"; // split CUDA build
                         }
                     }
+                    logger.info("Downloading {} ...", fileName);
                     try (InputStream fis = new GZIPInputStream(url.openStream())) {
                         Files.copy(fis, tmp.resolve(fileName), StandardCopyOption.REPLACE_EXISTING);
                     }
                 }
             }
 
-            Utils.deleteQuietly(dir);
-            Files.move(tmp, dir);
-            tmp = null;
+            Utils.moveQuietly(tmp, dir);
             return path.toAbsolutePath().toString();
         } finally {
             if (tmp != null) {
                 Utils.deleteQuietly(tmp);
             }
         }
+    }
+
+    private static Path getCacheDir() {
+        String cacheDir = System.getProperty("ENGINE_CACHE_DIR");
+        if (cacheDir == null || cacheDir.isEmpty()) {
+            cacheDir = System.getenv("ENGINE_CACHE_DIR");
+            if (cacheDir == null || cacheDir.isEmpty()) {
+                cacheDir = System.getProperty("DJL_CACHE_DIR");
+                if (cacheDir == null || cacheDir.isEmpty()) {
+                    cacheDir = System.getenv("DJL_CACHE_DIR");
+                    if (cacheDir == null || cacheDir.isEmpty()) {
+                        String userHome = System.getProperty("user.home");
+                        return Paths.get(userHome, ".mxnet/cache");
+                    }
+                }
+                return Paths.get(cacheDir, "mxnet");
+            }
+        }
+        return Paths.get(cacheDir, ".mxnet/cache");
     }
 }

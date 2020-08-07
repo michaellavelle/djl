@@ -15,6 +15,7 @@ package ai.djl.mxnet.zoo.cv.segmentation;
 import ai.djl.Application;
 import ai.djl.Device;
 import ai.djl.MalformedModelException;
+import ai.djl.modality.cv.Image;
 import ai.djl.modality.cv.output.DetectedObjects;
 import ai.djl.modality.cv.transform.Normalize;
 import ai.djl.modality.cv.transform.ToTensor;
@@ -29,12 +30,10 @@ import ai.djl.repository.zoo.BaseModelLoader;
 import ai.djl.repository.zoo.Criteria;
 import ai.djl.repository.zoo.ModelNotFoundException;
 import ai.djl.repository.zoo.ZooModel;
-import ai.djl.translate.Pipeline;
 import ai.djl.translate.Translator;
 import ai.djl.translate.TranslatorFactory;
 import ai.djl.util.Pair;
 import ai.djl.util.Progress;
-import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
@@ -49,13 +48,15 @@ import java.util.Map;
  *
  * @see ai.djl.mxnet.engine.MxSymbolBlock
  */
-public class InstanceSegmentationModelLoader
-        extends BaseModelLoader<BufferedImage, DetectedObjects> {
+public class InstanceSegmentationModelLoader extends BaseModelLoader<Image, DetectedObjects> {
 
     private static final Application APPLICATION = Application.CV.INSTANCE_SEGMENTATION;
     private static final String GROUP_ID = MxModelZoo.GROUP_ID;
     private static final String ARTIFACT_ID = "mask_rcnn";
     private static final String VERSION = "0.0.1";
+
+    private static final float[] MEAN = {0.485f, 0.456f, 0.406f};
+    private static final float[] STD = {0.229f, 0.224f, 0.225f};
 
     /**
      * Creates the Model loader from the given repository.
@@ -63,10 +64,10 @@ public class InstanceSegmentationModelLoader
      * @param repository the repository to load the model from
      */
     public InstanceSegmentationModelLoader(Repository repository) {
-        super(repository, MRL.model(APPLICATION, GROUP_ID, ARTIFACT_ID), VERSION);
+        super(repository, MRL.model(APPLICATION, GROUP_ID, ARTIFACT_ID), VERSION, new MxModelZoo());
         FactoryImpl factory = new FactoryImpl();
 
-        factories.put(new Pair<>(BufferedImage.class, DetectedObjects.class), factory);
+        factories.put(new Pair<>(Image.class, DetectedObjects.class), factory);
         factories.put(
                 new Pair<>(Path.class, DetectedObjects.class),
                 new FileTranslatorFactory<>(factory));
@@ -95,12 +96,12 @@ public class InstanceSegmentationModelLoader
      * @throws MalformedModelException if the model data is malformed
      */
     @Override
-    public ZooModel<BufferedImage, DetectedObjects> loadModel(
+    public ZooModel<Image, DetectedObjects> loadModel(
             Map<String, String> filters, Device device, Progress progress)
             throws IOException, ModelNotFoundException, MalformedModelException {
-        Criteria<BufferedImage, DetectedObjects> criteria =
+        Criteria<Image, DetectedObjects> criteria =
                 Criteria.builder()
-                        .setTypes(BufferedImage.class, DetectedObjects.class)
+                        .setTypes(Image.class, DetectedObjects.class)
                         .optFilters(filters)
                         .optDevice(device)
                         .optProgress(progress)
@@ -108,23 +109,15 @@ public class InstanceSegmentationModelLoader
         return loadModel(criteria);
     }
 
-    private static final class FactoryImpl
-            implements TranslatorFactory<BufferedImage, DetectedObjects> {
+    private static final class FactoryImpl implements TranslatorFactory<Image, DetectedObjects> {
 
         /** {@inheritDoc} */
         @Override
-        public Translator<BufferedImage, DetectedObjects> newInstance(
-                Map<String, Object> arguments) {
-            Pipeline pipeline = new Pipeline();
-            pipeline.add(new ToTensor())
-                    .add(
-                            new Normalize(
-                                    new float[] {0.485f, 0.456f, 0.406f},
-                                    new float[] {0.229f, 0.224f, 0.225f}));
-
+        public Translator<Image, DetectedObjects> newInstance(Map<String, Object> arguments) {
             return InstanceSegmentationTranslator.builder()
-                    .setPipeline(pipeline)
-                    .setSynsetArtifactName("classes.txt")
+                    .addTransform(new ToTensor())
+                    .addTransform(new Normalize(MEAN, STD))
+                    .optSynsetArtifactName("classes.txt")
                     .build();
         }
     }

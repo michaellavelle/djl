@@ -19,12 +19,11 @@ import ai.djl.basicdataset.Cifar10;
 import ai.djl.basicmodelzoo.BasicModelZoo;
 import ai.djl.basicmodelzoo.cv.classification.ResNetV1;
 import ai.djl.examples.training.util.Arguments;
-import ai.djl.examples.training.util.TrainingUtils;
 import ai.djl.metric.Metrics;
 import ai.djl.modality.Classifications;
+import ai.djl.modality.cv.Image;
 import ai.djl.modality.cv.transform.Normalize;
 import ai.djl.modality.cv.transform.ToTensor;
-import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.Block;
 import ai.djl.nn.Blocks;
@@ -35,21 +34,21 @@ import ai.djl.repository.zoo.Criteria;
 import ai.djl.repository.zoo.ModelNotFoundException;
 import ai.djl.repository.zoo.ModelZoo;
 import ai.djl.training.DefaultTrainingConfig;
+import ai.djl.training.EasyTrain;
 import ai.djl.training.Trainer;
 import ai.djl.training.TrainingResult;
 import ai.djl.training.dataset.Dataset;
 import ai.djl.training.dataset.RandomAccessDataset;
 import ai.djl.training.evaluator.Accuracy;
+import ai.djl.training.listener.CheckpointsTrainingListener;
 import ai.djl.training.listener.TrainingListener;
 import ai.djl.training.loss.Loss;
 import ai.djl.training.optimizer.Optimizer;
-import ai.djl.training.optimizer.learningrate.LearningRateTracker;
-import ai.djl.training.optimizer.learningrate.MultiFactorTracker;
+import ai.djl.training.tracker.Tracker;
 import ai.djl.training.util.ProgressBar;
 import ai.djl.translate.Pipeline;
-import java.awt.image.BufferedImage;
+import ai.djl.translate.TranslateException;
 import java.io.IOException;
-import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Map;
 import org.apache.commons.cli.CommandLine;
@@ -64,12 +63,14 @@ public final class TrainWithOptimizers {
     private TrainWithOptimizers() {}
 
     public static void main(String[] args)
-            throws IOException, ParseException, ModelNotFoundException, MalformedModelException {
+            throws IOException, ParseException, ModelNotFoundException, MalformedModelException,
+                    TranslateException {
         TrainWithOptimizers.runExample(args);
     }
 
     public static TrainingResult runExample(String[] args)
-            throws IOException, ParseException, ModelNotFoundException, MalformedModelException {
+            throws IOException, ParseException, ModelNotFoundException, MalformedModelException,
+                    TranslateException {
         Options options = OptimizerArguments.getOptions();
         DefaultParser parser = new DefaultParser();
         CommandLine cmd = parser.parse(options, args, null, false);
@@ -94,22 +95,9 @@ public final class TrainWithOptimizers {
 
                 // initialize trainer with proper input shape
                 trainer.initialize(inputShape);
-                TrainingUtils.fit(
-                        trainer,
-                        arguments.getEpoch(),
-                        trainDataset,
-                        validationDataset,
-                        arguments.getOutputDir(),
-                        "resnetv1");
+                EasyTrain.fit(trainer, arguments.getEpoch(), trainDataset, validationDataset);
 
-                TrainingResult result = trainer.getTrainingResult();
-                float accuracy = result.getValidateEvaluation("Accuracy");
-                model.setProperty("Epoch", String.valueOf(result.getEpoch()));
-                model.setProperty("Accuracy", String.format("%.5f", accuracy));
-                model.setProperty("Loss", String.format("%.5f", result.getValidateLoss()));
-
-                model.save(Paths.get("build/model"), "resnetv1");
-                return result;
+                return trainer.getTrainingResult();
             }
         }
     }
@@ -119,9 +107,9 @@ public final class TrainWithOptimizers {
         boolean isSymbolic = arguments.isSymbolic();
         boolean preTrained = arguments.isPreTrained();
         Map<String, String> options = arguments.getCriteria();
-        Criteria.Builder<BufferedImage, Classifications> builder =
+        Criteria.Builder<Image, Classifications> builder =
                 Criteria.builder()
-                        .setTypes(BufferedImage.class, Classifications.class)
+                        .setTypes(Image.class, Classifications.class)
                         .optProgress(new ProgressBar())
                         .optArtifactId("resnet");
         if (isSymbolic) {
@@ -139,9 +127,10 @@ public final class TrainWithOptimizers {
             SymbolBlock block = (SymbolBlock) model.getBlock();
             block.removeLastBlock();
             newBlock.add(block);
-            newBlock.add(x -> new NDList(x.singletonOrThrow().squeeze()));
-            newBlock.add(Linear.builder().setOutChannels(10).build());
+            // the original model don't include the flatten
+            // so apply the flatten here
             newBlock.add(Blocks.batchFlattenBlock());
+            newBlock.add(Linear.builder().setUnits(10).build());
             model.setBlock(newBlock);
             if (!preTrained) {
                 model.getBlock().clear();
@@ -162,7 +151,7 @@ public final class TrainWithOptimizers {
             return ModelZoo.loadModel(builder.build());
         } else {
             // construct new ResNet50 without pre-trained weights
-            Model model = Model.newInstance();
+            Model model = Model.newInstance("resnetv1");
             Block resNet50 =
                     ResNetV1.builder()
                             .setImageShape(new Shape(3, Cifar10.IMAGE_HEIGHT, Cifar10.IMAGE_WIDTH))
@@ -175,11 +164,24 @@ public final class TrainWithOptimizers {
     }
 
     private static DefaultTrainingConfig setupTrainingConfig(OptimizerArguments arguments) {
+        String outputDir = arguments.getOutputDir();
+        CheckpointsTrainingListener listener =
+                new CheckpointsTrainingListener(outputDir, "resnetv1");
+        listener.setSaveModelCallback(
+                trainer -> {
+                    TrainingResult result = trainer.getTrainingResult();
+                    Model model = trainer.getModel();
+                    float accuracy = result.getValidateEvaluation("Accuracy");
+                    model.setProperty("Accuracy", String.format("%.5f", accuracy));
+                    model.setProperty("Loss", String.format("%.5f", result.getValidateLoss()));
+                });
+
         return new DefaultTrainingConfig(Loss.softmaxCrossEntropyLoss())
                 .addEvaluator(new Accuracy())
                 .optOptimizer(setupOptimizer(arguments))
                 .optDevices(Device.getDevices(arguments.getMaxGpus()))
-                .addTrainingListeners(TrainingListener.Defaults.logging(arguments.getOutputDir()));
+                .addTrainingListeners(TrainingListener.Defaults.logging(outputDir))
+                .addTrainingListeners(listener);
     }
 
     private static Optimizer setupOptimizer(OptimizerArguments arguments) {
@@ -195,13 +197,16 @@ public final class TrainWithOptimizers {
                     epochs = new int[] {20, 60, 90, 120, 180};
                 }
                 int[] steps = Arrays.stream(epochs).map(k -> k * 60000 / batchSize).toArray();
-                MultiFactorTracker learningRateTracker =
-                        LearningRateTracker.multiFactorTracker()
-                                .setSteps(steps)
-                                .optBaseLearningRate(1e-3f)
-                                .optFactor((float) Math.sqrt(.1f))
-                                .optWarmUpBeginLearningRate(1e-4f)
+                Tracker learningRateTracker =
+                        Tracker.warmUp()
+                                .optWarmUpBeginValue(1e-4f)
                                 .optWarmUpSteps(200)
+                                .setMainTracker(
+                                        Tracker.multiFactor()
+                                                .setSteps(steps)
+                                                .setBaseValue(1e-3f)
+                                                .optFactor((float) Math.sqrt(.1f))
+                                                .build())
                                 .build();
                 return Optimizer.sgd()
                         .setLearningRateTracker(learningRateTracker)

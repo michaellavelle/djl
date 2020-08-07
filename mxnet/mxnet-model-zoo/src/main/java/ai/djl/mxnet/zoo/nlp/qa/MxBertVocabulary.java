@@ -12,22 +12,22 @@
  */
 package ai.djl.mxnet.zoo.nlp.qa;
 
-import ai.djl.modality.nlp.bert.BertVocabulary;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
+import ai.djl.modality.nlp.Vocabulary;
+import ai.djl.util.JsonUtils;
 import com.google.gson.annotations.SerializedName;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
-/** A MXNet implementaion of BertVocabulary. */
-public class MxBertVocabulary extends BertVocabulary {
-
-    private static final Gson GSON = new GsonBuilder().create();
+/** A MXNet implementation of Vocabulary. */
+public class MxBertVocabulary implements Vocabulary {
 
     @SerializedName("token_to_idx")
     private Map<String, Long> token2idx;
@@ -38,12 +38,40 @@ public class MxBertVocabulary extends BertVocabulary {
     /**
      * Parses the vocabulary file and create {@code MxBertVocabulary}.
      *
+     * @param path the input file path
+     * @return an instance of {@code MxBertVocabulary}
+     */
+    public static MxBertVocabulary parse(Path path) {
+        try {
+            return parse(Files.newInputStream(path));
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /**
+     * Parses the vocabulary file and create {@code MxBertVocabulary}.
+     *
+     * @param url the input vocabulary file url
+     * @return an instance of {@code MxBertVocabulary}
+     */
+    public static MxBertVocabulary parse(String url) {
+        try {
+            return parse(new URL(url).openStream());
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /**
+     * Parses the vocabulary file and create {@code MxBertVocabulary}.
+     *
      * @param is the input InputStream of the vocabulary file
      * @return an instance of {@code MxBertVocabulary}
      */
     public static MxBertVocabulary parse(InputStream is) {
         try (Reader reader = new InputStreamReader(is, StandardCharsets.UTF_8)) {
-            return GSON.fromJson(reader, MxBertVocabulary.class);
+            return JsonUtils.GSON.fromJson(reader, MxBertVocabulary.class);
         } catch (IOException e) {
             throw new IllegalStateException(e);
         }
@@ -53,6 +81,12 @@ public class MxBertVocabulary extends BertVocabulary {
     @Override
     public long getIndex(String token) {
         return (token2idx.containsKey(token)) ? token2idx.get(token) : token2idx.get("[UNK]");
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public long size() {
+        return idx2token.size();
     }
 
     /** {@inheritDoc} */

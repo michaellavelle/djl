@@ -53,31 +53,48 @@ public interface Model extends AutoCloseable {
     /**
      * Creates an empty model instance.
      *
+     * @param name the model name
      * @return a new Model instance
      */
-    static Model newInstance() {
-        return newInstance(Device.defaultDevice());
+    static Model newInstance(String name) {
+        return newInstance(name, Device.defaultDevice());
     }
 
     /**
      * Creates an empty model instance on the specified {@link Device}.
      *
+     * @param name the model name
      * @param device the device to load the model onto
      * @return a new model instance
      */
-    static Model newInstance(Device device) {
-        return Engine.getInstance().newModel(device);
+    static Model newInstance(String name, Device device) {
+        return Engine.getInstance().newModel(name, device);
     }
 
     /**
      * Creates an empty model instance on the specified {@link Device} and engine.
      *
+     * @param name the model name
+     * @param engineName the name of the engine
+     * @return a new model instance
+     */
+    static Model newInstance(String name, String engineName) {
+        return Engine.getEngine(engineName).newModel(name, Device.defaultDevice());
+    }
+
+    /**
+     * Creates an empty model instance on the specified {@link Device} and engine.
+     *
+     * @param name the model name
      * @param device the device to load the model onto
      * @param engineName the name of the engine
      * @return a new model instance
      */
-    static Model newInstance(Device device, String engineName) {
-        return Engine.getEngine(engineName).newModel(device);
+    static Model newInstance(String name, Device device, String engineName) {
+        if (engineName == null || engineName.isEmpty()) {
+            return newInstance(name, device);
+        }
+        return Engine.getEngine(engineName).newModel(name, device);
     }
 
     /**
@@ -88,42 +105,48 @@ public interface Model extends AutoCloseable {
      * @throws MalformedModelException if model file is corrupted
      */
     default void load(Path modelPath) throws IOException, MalformedModelException {
-        load(modelPath, modelPath.toFile().getName(), null);
+        load(modelPath, null, null);
     }
 
     /**
      * Loads the model from the {@code modelPath} and the given name.
      *
      * @param modelPath the directory or file path of the model location
-     * @param modelName the model file name
+     * @param prefix the model file name or path prefix
      * @throws IOException when IO operation fails in loading a resource
      * @throws MalformedModelException if model file is corrupted
      */
-    default void load(Path modelPath, String modelName)
-            throws IOException, MalformedModelException {
-        load(modelPath, modelName, null);
+    default void load(Path modelPath, String prefix) throws IOException, MalformedModelException {
+        load(modelPath, prefix, null);
     }
 
     /**
      * Loads the model from the {@code modelPath} with the name and options provided.
      *
      * @param modelPath the directory or file path of the model location
-     * @param modelName the model file name
+     * @param prefix the model file name or path prefix
      * @param options engine specific load model options, see documentation for each engine
      * @throws IOException when IO operation fails in loading a resource
      * @throws MalformedModelException if model file is corrupted
      */
-    void load(Path modelPath, String modelName, Map<String, Object> options)
+    void load(Path modelPath, String prefix, Map<String, Object> options)
             throws IOException, MalformedModelException;
 
     /**
      * Saves the model to the specified {@code modelPath} with the name provided.
      *
      * @param modelPath the directory or file path of the model location
-     * @param modelName the model file name
+     * @param newModelName the new model name to be saved, use null to keep original model name
      * @throws IOException when IO operation fails in loading a resource
      */
-    void save(Path modelPath, String modelName) throws IOException;
+    void save(Path modelPath, String newModelName) throws IOException;
+
+    /**
+     * Returns the directory from where the model is loaded.
+     *
+     * @return the directory of the model location
+     */
+    Path getModelPath();
 
     /**
      * Gets the block from the Model.

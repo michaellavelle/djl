@@ -14,17 +14,20 @@ package ai.djl.pytorch.engine;
 
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
+import ai.djl.ndarray.NDManager;
 import ai.djl.ndarray.NDUtils;
+import ai.djl.ndarray.index.NDArrayIndexer;
 import ai.djl.ndarray.internal.NDArrayEx;
 import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
-import ai.djl.nn.pooling.PoolingConvention;
 import ai.djl.pytorch.jni.JniUtils;
 import ai.djl.util.PairList;
 import java.util.List;
 
 /** {@code PtNDArrayEx} is the PyTorch implementation of the {@link NDArrayEx}. */
 public class PtNDArrayEx implements NDArrayEx {
+
+    private static final NDArrayIndexer INDEXER = new PtNDArrayIndexer();
 
     private PtNDArray array;
 
@@ -130,108 +133,120 @@ public class PtNDArrayEx implements NDArrayEx {
     /** {@inheritDoc} */
     @Override
     public PtNDArray sigmoid() {
-        throw new UnsupportedOperationException("Not implemented");
+        return JniUtils.sigmoid(array);
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray tanh() {
-        throw new UnsupportedOperationException("Not implemented");
+        return JniUtils.tanh(array);
     }
 
     /** {@inheritDoc} */
     @Override
-    public PtNDArray softrelu() {
-        throw new UnsupportedOperationException("Not implemented");
+    public PtNDArray softPlus() {
+        return JniUtils.softPlus(array);
     }
 
     /** {@inheritDoc} */
     @Override
-    public PtNDArray softsign() {
-        throw new UnsupportedOperationException("Not implemented");
+    public PtNDArray softSign() {
+        return JniUtils.softSign(array);
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray leakyRelu(float alpha) {
-        throw new UnsupportedOperationException("Not implemented");
+        return JniUtils.leakyRelu(array, alpha);
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray elu(float alpha) {
-        throw new UnsupportedOperationException("Not implemented");
+        return JniUtils.elu(array, alpha);
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray selu() {
-        throw new UnsupportedOperationException("Not implemented");
+        return JniUtils.selu(array);
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray gelu() {
-        throw new UnsupportedOperationException("Not implemented");
+        return JniUtils.gelu(array);
     }
 
     /** {@inheritDoc} */
     @Override
-    public PtNDArray maxPool(
-            Shape kernel, Shape stride, Shape pad, PoolingConvention poolingConvention) {
-        throw new UnsupportedOperationException("Not implemented");
+    public PtNDArray maxPool(Shape kernelShape, Shape stride, Shape padding, boolean ceilMode) {
+        return JniUtils.maxPool(array, kernelShape, stride, padding, ceilMode);
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray globalMaxPool() {
-        throw new UnsupportedOperationException("Not implemented");
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public PtNDArray sumPool(
-            Shape kernel, Shape stride, Shape pad, PoolingConvention poolingConvention) {
-        throw new UnsupportedOperationException("Not implemented");
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public PtNDArray globalSumPool() {
-        throw new UnsupportedOperationException("Not implemented");
+        Shape shape = getPoolShape(array);
+        try (NDArray temp = JniUtils.adaptiveMaxPool(array, shape)) {
+            return (PtNDArray) temp.reshape(array.getShape().slice(0, 2));
+        }
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray avgPool(
-            Shape kernel,
+            Shape kernelShape,
             Shape stride,
-            Shape pad,
-            PoolingConvention poolingConvention,
+            Shape padding,
+            boolean ceilMode,
             boolean countIncludePad) {
-        throw new UnsupportedOperationException("Not implemented");
+        return JniUtils.avgPool(array, kernelShape, stride, padding, ceilMode, countIncludePad);
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray globalAvgPool() {
-        throw new UnsupportedOperationException("Not implemented");
+        Shape shape = getPoolShape(array);
+        try (NDArray temp = JniUtils.adaptiveAvgPool(array, shape)) {
+            return (PtNDArray) temp.reshape(array.getShape().slice(0, 2));
+        }
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray lpPool(
-            Shape kernel,
-            Shape stride,
-            Shape pad,
-            PoolingConvention poolingConvention,
-            int pValue) {
-        throw new UnsupportedOperationException("Not implemented");
+            float normType, Shape kernelShape, Shape stride, Shape padding, boolean ceilMode) {
+        if (padding.size() != 0) {
+            throw new IllegalArgumentException("padding is not supported for PyTorch engine");
+        }
+        if (array.getShape().dimension() - 2 == 3) {
+            throw new IllegalArgumentException("3D lpPool is not supported in PyTorch engine");
+        }
+        return JniUtils.lpPool(array, normType, kernelShape, stride, ceilMode);
     }
 
     /** {@inheritDoc} */
     @Override
-    public PtNDArray globalLpPool(int pValue) {
+    public PtNDArray globalLpPool(float normType) {
+        try (NDArray temp =
+                JniUtils.lpPool(
+                        array, normType, array.getShape().slice(2), getPoolShape(array), false)) {
+            return (PtNDArray) temp.reshape(array.getShape().slice(0, 2));
+        }
+        //        throw new UnsupportedOperationException("Not implemented");
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void adagradUpdate(
+            NDList inputs,
+            NDList weights,
+            float learningRate,
+            float weightDecay,
+            float rescaleGrad,
+            float clipGrad,
+            float epsilon) {
         throw new UnsupportedOperationException("Not implemented");
     }
 
@@ -248,7 +263,21 @@ public class PtNDArrayEx implements NDArrayEx {
             float beta2,
             float epsilon,
             boolean lazyUpdate) {
-        throw new UnsupportedOperationException("Not implemented");
+        // TODO: Lazy update not used
+        JniUtils.adamUpdate(
+                (PtNDArray) inputs.get(0),
+                (PtNDArray) inputs.get(1),
+                (PtNDArray) inputs.get(2),
+                (PtNDArray) inputs.get(3),
+                learningRate,
+                weightDecay,
+                rescaleGrad,
+                clipGrad,
+                beta1,
+                beta2,
+                epsilon);
+        // call zero-grad
+        JniUtils.zeroGrad((PtNDArray) weights.singletonOrThrow());
     }
 
     /** {@inheritDoc} */
@@ -266,6 +295,22 @@ public class PtNDArrayEx implements NDArrayEx {
 
     /** {@inheritDoc} */
     @Override
+    public void rmspropUpdate(
+            NDList inputs,
+            NDList weights,
+            float learningRate,
+            float weightDecay,
+            float rescaleGrad,
+            float clipGrad,
+            float rho,
+            float momentum,
+            float epsilon,
+            boolean centered) {
+        throw new UnsupportedOperationException("Not implemented");
+    }
+
+    /** {@inheritDoc} */
+    @Override
     public void sgdUpdate(
             NDList inputs,
             NDList weights,
@@ -275,54 +320,45 @@ public class PtNDArrayEx implements NDArrayEx {
             float clipGrad,
             float momentum,
             boolean lazyUpdate) {
-        throw new UnsupportedOperationException("Not implemented");
+        // TODO: Lazy update not used
+        JniUtils.sgdUpdate(
+                (PtNDArray) inputs.get(0),
+                (PtNDArray) inputs.get(1),
+                (momentum == 0f) ? null : (PtNDArray) inputs.get(2),
+                learningRate,
+                weightDecay,
+                rescaleGrad,
+                clipGrad,
+                momentum);
+        // call zero-grad
+        JniUtils.zeroGrad((PtNDArray) weights.singletonOrThrow());
     }
 
     /** {@inheritDoc} */
     @Override
     public NDList convolution(
-            NDList inputs,
-            Shape kernel,
+            NDArray input,
+            NDArray weight,
+            NDArray bias,
             Shape stride,
-            Shape pad,
-            Shape dilate,
-            int numFilters,
-            int numGroups,
-            String layout,
-            boolean noBias,
-            PairList<String, Object> additional) {
-        // TODO: numFilters and kernel not used
+            Shape padding,
+            Shape dilation,
+            int groups) {
         return new NDList(
                 JniUtils.convolution(
-                        (PtNDArray) inputs.get(0),
-                        (PtNDArray) inputs.get(1),
-                        noBias ? null : (PtNDArray) inputs.get(2),
+                        (PtNDArray) input,
+                        (PtNDArray) weight,
+                        (PtNDArray) bias,
                         stride,
-                        pad,
-                        dilate,
-                        numGroups,
-                        noBias));
+                        padding,
+                        dilation,
+                        groups));
     }
 
     /** {@inheritDoc} */
     @Override
-    public NDList fullyConnected(
-            NDList inputs,
-            long outChannels,
-            boolean flatten,
-            boolean noBias,
-            PairList<String, Object> additional) {
-        NDArray result =
-                JniUtils.fullyConnected(
-                        (PtNDArray) inputs.get(0),
-                        (PtNDArray) inputs.get(1),
-                        noBias ? null : (PtNDArray) inputs.get(2),
-                        noBias);
-        if (flatten) {
-            long batchSize = result.getShape().get(0);
-            result = result.reshape(batchSize, outChannels);
-        }
-        return new NDList(result);
+    public NDList linear(NDArray input, NDArray weight, NDArray bias) {
+        return new NDList(JniUtils.linear((PtNDArray) input, (PtNDArray) weight, (PtNDArray) bias));
     }
 
     /** {@inheritDoc} */
@@ -339,42 +375,64 @@ public class PtNDArrayEx implements NDArrayEx {
 
     /** {@inheritDoc} */
     @Override
-    public NDList prelu(NDList inputs, PairList<String, Object> additional) {
+    public NDList prelu(NDArray input, NDArray alpha) {
         throw new UnsupportedOperationException("Not implemented");
     }
 
     /** {@inheritDoc} */
     @Override
-    public NDList dropout(
-            NDList inputs,
-            float probability,
-            int[] sharedAxes,
-            PairList<String, Object> additional) {
-        throw new UnsupportedOperationException("Not implemented");
+    public NDList dropout(NDArray input, float rate, boolean training) {
+        return new NDList(JniUtils.dropout((PtNDArray) input, rate, training));
     }
 
     /** {@inheritDoc} */
     @Override
     public NDList batchNorm(
-            NDList inputs,
-            float epsilon,
-            float momentum,
+            NDArray input,
+            NDArray runningMean,
+            NDArray runningVar,
+            NDArray gamma,
+            NDArray beta,
             int axis,
-            boolean center,
-            boolean scale,
-            PairList<String, Object> additional) {
-        // TODO: modify for training model
-        // TODO: axis center and scale are not used
-        return new NDList(
-                JniUtils.batchNorm(
-                        (PtNDArray) inputs.get(0),
-                        (PtNDArray) inputs.get(1),
-                        (PtNDArray) inputs.get(2),
-                        (PtNDArray) inputs.get(3),
-                        (PtNDArray) inputs.get(4),
-                        false,
-                        momentum,
-                        epsilon));
+            float momentum,
+            float eps,
+            boolean training) {
+        // TODO PyTorch will support axis argument
+        // https://github.com/pytorch/pytorch/issues/21856
+        if (axis == -1) {
+            return new NDList(
+                    JniUtils.batchNorm(
+                            (PtNDArray) input,
+                            (PtNDArray) runningMean,
+                            (PtNDArray) runningVar,
+                            (PtNDArray) gamma,
+                            (PtNDArray) beta,
+                            training,
+                            // momentum is defined differently in PyTorch
+                            1f - momentum,
+                            eps));
+        }
+        // apply the swapAxes to simulate BatchNorm with axis
+        try (NDManager subManager = input.getManager().newSubManager()) {
+            input.attach(subManager);
+            NDArray result = input;
+            result = result.swapAxes(1, axis);
+            result =
+                    JniUtils.batchNorm(
+                            (PtNDArray) result,
+                            (PtNDArray) runningMean,
+                            (PtNDArray) runningVar,
+                            (PtNDArray) gamma,
+                            (PtNDArray) beta,
+                            training,
+                            // momentum is defined differently in PyTorch
+                            1f - momentum,
+                            eps);
+            result = result.swapAxes(1, axis);
+            input.attach(subManager.getParentManager());
+            result.attach(subManager.getParentManager());
+            return new NDList(result);
+        }
     }
 
     /** {@inheritDoc} */
@@ -411,37 +469,75 @@ public class PtNDArrayEx implements NDArrayEx {
     /** {@inheritDoc} */
     @Override
     public PtNDArray resize(int width, int height) {
-        NDArray result = array;
-        if (result.isEmpty()) {
-            throw new IllegalArgumentException("attempt to resize of an empty NDArray");
+        // create subManager to help close intermediate NDArray
+        try (NDManager subManager = array.getManager().newSubManager()) {
+            array.attach(subManager);
+            NDArray result = array;
+            if (result.isEmpty()) {
+                throw new IllegalArgumentException("attempt to resize of an empty NDArray");
+            }
+            if (result.getDataType() != DataType.FLOAT32) {
+                result = result.toType(DataType.FLOAT32, true);
+            }
+            int dim = result.getShape().dimension();
+            if (dim == 3) {
+                result = result.expandDims(0);
+            }
+            result = result.transpose(0, 3, 1, 2);
+            result =
+                    JniUtils.upsampleBilinear2d(
+                                    (PtNDArray) result, new long[] {height, width}, true)
+                            .transpose(0, 2, 3, 1);
+            if (dim == 3) {
+                result = result.squeeze(0);
+            }
+            array.attach(subManager.getParentManager());
+            result.attach(subManager.getParentManager());
+            return (PtNDArray) result;
         }
-        if (result.getDataType() != DataType.FLOAT32) {
-            result = result.toType(DataType.FLOAT32, true);
-        }
-        int dim = result.getShape().dimension();
-        if (dim == 3) {
-            result = result.expandDims(0);
-        }
-        result = result.transpose(0, 3, 1, 2);
-        result =
-                JniUtils.upsampleBilinear2d((PtNDArray) result, new long[] {height, width}, true)
-                        .transpose(0, 2, 3, 1);
-        if (dim == 3) {
-            result = result.squeeze(0);
-        }
-        return (PtNDArray) result;
+    }
+
+    @Override
+    public NDArray randomFlipLeftRight() {
+        throw new UnsupportedOperationException("Not implemented");
+    }
+
+    @Override
+    public NDArray randomFlipTopBottom() {
+        throw new UnsupportedOperationException("Not implemented");
+    }
+
+    @Override
+    public NDArray randomBrightness(float brightness) {
+        throw new UnsupportedOperationException("Not implemented");
+    }
+
+    @Override
+    public NDArray randomHue(float hue) {
+        throw new UnsupportedOperationException("Not implemented");
+    }
+
+    @Override
+    public NDArray randomColorJitter(
+            float brightness, float contrast, float saturation, float hue) {
+        throw new UnsupportedOperationException("Not implemented");
     }
 
     /** {@inheritDoc} */
     @Override
-    public PtNDArray pick(NDArray index, int axis, boolean keepDims, String mode) {
-        throw new UnsupportedOperationException("Not implemented");
+    public NDArrayIndexer getIndexer() {
+        return INDEXER;
     }
 
     /** {@inheritDoc} */
     @Override
     public PtNDArray where(NDArray condition, NDArray other) {
-        throw new UnsupportedOperationException("Not implemented");
+        // Try to broadcast if shape mismatch
+        if (!condition.getShape().equals(array.getShape())) {
+            throw new UnsupportedOperationException(
+                    "condition and self shape mismatch, broadcast is not supported");
+        }
+        return JniUtils.where((PtNDArray) condition, array, (PtNDArray) other);
     }
 
     /** {@inheritDoc} */
@@ -504,5 +600,18 @@ public class PtNDArrayEx implements NDArrayEx {
     @Override
     public PtNDArray getArray() {
         return array;
+    }
+
+    private Shape getPoolShape(NDArray array) {
+        switch (array.getShape().dimension() - 2) {
+            case 1:
+                return new Shape(1);
+            case 2:
+                return new Shape(1, 1);
+            case 3:
+                return new Shape(1, 1, 1);
+            default:
+                throw new IllegalArgumentException("the input dimension should be in [3, 5]");
+        }
     }
 }

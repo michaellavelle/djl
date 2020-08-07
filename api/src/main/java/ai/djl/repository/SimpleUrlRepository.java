@@ -92,7 +92,7 @@ public class SimpleUrlRepository extends AbstractRepository {
         try {
             Metadata m = getMetadata();
             if (m != null && !m.getArtifacts().isEmpty()) {
-                MRL mrl = MRL.model(Application.UNDEFINED, m.getGroupId(), m.getArtifactId());
+                MRL mrl = MRL.undefined(m.getGroupId(), m.getArtifactId());
                 return Collections.singletonList(mrl);
             }
         } catch (IOException e) {
@@ -105,6 +105,7 @@ public class SimpleUrlRepository extends AbstractRepository {
     @Override
     protected void download(Path tmp, URI baseUri, Artifact.Item item, Progress progress)
             throws IOException {
+        logger.debug("Downloading artifact: {} ...", uri);
         try (InputStream is = uri.toURL().openStream()) {
             save(is, tmp, baseUri, item, progress);
         }
@@ -139,6 +140,7 @@ public class SimpleUrlRepository extends AbstractRepository {
             artifact.setName(modelName);
 
             metadata = new Metadata.MatchAllMetadata();
+            metadata.setApplication(Application.UNDEFINED);
             metadata.setGroupId(DefaultModelZoo.GROUP_ID);
             metadata.setArtifactId(artifactId);
             metadata.setArtifacts(Collections.singletonList(artifact));

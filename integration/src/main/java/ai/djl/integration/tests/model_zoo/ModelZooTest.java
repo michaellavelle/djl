@@ -18,7 +18,9 @@ import ai.djl.repository.Artifact;
 import ai.djl.repository.zoo.ModelLoader;
 import ai.djl.repository.zoo.ModelZoo;
 import ai.djl.repository.zoo.ZooProvider;
+import ai.djl.util.Utils;
 import java.io.IOException;
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.ServiceLoader;
 import org.testng.annotations.AfterClass;
@@ -31,6 +33,8 @@ public class ModelZooTest {
     public void setUp() {
         // force downloading without cache in .djl.ai folder.
         System.setProperty("DJL_CACHE_DIR", "build/cache");
+        String userHome = System.getProperty("user.home");
+        System.setProperty("ENGINE_CACHE_DIR", userHome);
     }
 
     @AfterClass
@@ -54,6 +58,7 @@ public class ModelZooTest {
                         Model model = modelLoader.loadModel(artifact.getProperties());
                         model.close();
                     }
+                    Utils.deleteQuietly(Paths.get("build/cache"));
                 }
             }
         }

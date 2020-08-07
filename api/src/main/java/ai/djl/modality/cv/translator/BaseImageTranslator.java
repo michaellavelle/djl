@@ -12,24 +12,31 @@
  */
 package ai.djl.modality.cv.translator;
 
-import ai.djl.modality.cv.util.BufferedImageUtils;
-import ai.djl.modality.cv.util.NDImageUtils;
+import ai.djl.Model;
+import ai.djl.modality.cv.Image;
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
+import ai.djl.translate.Batchifier;
 import ai.djl.translate.Pipeline;
+import ai.djl.translate.Transform;
 import ai.djl.translate.Translator;
 import ai.djl.translate.TranslatorContext;
-import java.awt.image.BufferedImage;
+import ai.djl.util.Utils;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URL;
+import java.util.List;
 
 /**
  * Built-in {@code Translator} that provides default image pre-processing.
  *
  * @param <T> the output object type
  */
-public abstract class BaseImageTranslator<T> implements Translator<BufferedImage, T> {
+public abstract class BaseImageTranslator<T> implements Translator<Image, T> {
 
-    private NDImageUtils.Flag flag;
+    private Image.Flag flag;
     private Pipeline pipeline;
+    private Batchifier batchifier;
 
     /**
      * Constructs an ImageTranslator with the provided builder.
@@ -39,6 +46,13 @@ public abstract class BaseImageTranslator<T> implements Translator<BufferedImage
     public BaseImageTranslator(BaseBuilder<?> builder) {
         flag = builder.flag;
         pipeline = builder.pipeline;
+        batchifier = builder.batchifier;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public Batchifier getBatchifier() {
+        return batchifier;
     }
 
     /** {@inheritDoc} */
@@ -48,15 +62,15 @@ public abstract class BaseImageTranslator<T> implements Translator<BufferedImage
     }
 
     /**
-     * Processes the {@code BufferedImage} input and converts it to NDList.
+     * Processes the {@link Image} input and converts it to NDList.
      *
      * @param ctx the toolkit that helps create the input NDArray
-     * @param input the {@code BufferedImage} input
+     * @param input the {@link Image} input
      * @return a {@link NDList}
      */
     @Override
-    public NDList processInput(TranslatorContext ctx, BufferedImage input) {
-        NDArray array = BufferedImageUtils.toNDArray(ctx.getNDManager(), input, flag);
+    public NDList processInput(TranslatorContext ctx, Image input) {
+        NDArray array = input.toNDArray(ctx.getNDManager(), flag);
         return pipeline.transform(new NDList(array));
     }
 
@@ -68,17 +82,18 @@ public abstract class BaseImageTranslator<T> implements Translator<BufferedImage
     @SuppressWarnings("rawtypes")
     public abstract static class BaseBuilder<T extends BaseBuilder> {
 
-        protected NDImageUtils.Flag flag = NDImageUtils.Flag.COLOR;
+        protected Image.Flag flag = Image.Flag.COLOR;
         protected Pipeline pipeline;
+        protected Batchifier batchifier = Batchifier.STACK;
 
         /**
-         * Sets the optional {@link ai.djl.modality.cv.util.NDImageUtils.Flag} (default is {@link
-         * NDImageUtils.Flag#COLOR}).
+         * Sets the optional {@link ai.djl.modality.cv.Image.Flag} (default is {@link
+         * Image.Flag#COLOR}).
          *
          * @param flag the color mode for the images
          * @return this builder
          */
-        public T optFlag(NDImageUtils.Flag flag) {
+        public T optFlag(Image.Flag flag) {
             this.flag = flag;
             return self();
         }
@@ -94,6 +109,117 @@ public abstract class BaseImageTranslator<T> implements Translator<BufferedImage
             return self();
         }
 
+        /**
+         * Adds the {@link Transform} to the {@link Pipeline} use for pre-processing the image.
+         *
+         * @param transform the {@link Transform} to be added
+         * @return this builder
+         */
+        public T addTransform(Transform transform) {
+            if (pipeline == null) {
+                pipeline = new Pipeline();
+            }
+            pipeline.add(transform);
+            return self();
+        }
+
+        /**
+         * Sets the {@link Batchifier} for the {@link Translator}.
+         *
+         * @param batchifier the {@link Batchifier} to be set
+         * @return this builder
+         */
+        public T optBatchifier(Batchifier batchifier) {
+            this.batchifier = batchifier;
+            return self();
+        }
+
         protected abstract T self();
+
+        protected void validate() {
+            if (pipeline == null) {
+                throw new IllegalArgumentException("pipeline is required.");
+            }
+        }
+    }
+
+    /** A Builder to construct a {@code ImageClassificationTranslator}. */
+    @SuppressWarnings("rawtypes")
+    public abstract static class ClassificationBuilder<T extends BaseBuilder>
+            extends BaseBuilder<T> {
+
+        protected SynsetLoader synsetLoader;
+
+        /**
+         * Sets the name of the synset file listing the potential classes for an image.
+         *
+         * @param synsetArtifactName a file listing the potential classes for an image
+         * @return the builder
+         */
+        public T optSynsetArtifactName(String synsetArtifactName) {
+            synsetLoader = new SynsetLoader(synsetArtifactName);
+            return self();
+        }
+
+        /**
+         * Sets the URL of the synset file.
+         *
+         * @param synsetUrl the URL of the synset file
+         * @return the builder
+         */
+        public T optSynsetUrl(URL synsetUrl) {
+            this.synsetLoader = new SynsetLoader(synsetUrl);
+            return self();
+        }
+
+        /**
+         * Sets the potential classes for an image.
+         *
+         * @param synset the potential classes for an image
+         * @return the builder
+         */
+        public T optSynset(List<String> synset) {
+            synsetLoader = new SynsetLoader(synset);
+            return self();
+        }
+
+        /** {@inheritDoc} */
+        @Override
+        protected void validate() {
+            super.validate();
+            if (synsetLoader == null) {
+                synsetLoader = new SynsetLoader("synset.txt");
+            }
+        }
+    }
+
+    protected static final class SynsetLoader {
+
+        private String synsetFileName;
+        private URL synsetUrl;
+        private List<String> synset;
+
+        public SynsetLoader(List<String> synset) {
+            this.synset = synset;
+        }
+
+        public SynsetLoader(URL synsetUrl) {
+            this.synsetUrl = synsetUrl;
+        }
+
+        public SynsetLoader(String synsetFileName) {
+            this.synsetFileName = synsetFileName;
+        }
+
+        public List<String> load(Model model) throws IOException {
+            if (synset != null) {
+                return synset;
+            } else if (synsetUrl != null) {
+                try (InputStream is = synsetUrl.openStream()) {
+                    return Utils.readLines(is);
+                }
+            }
+            return model.getArtifact(synsetFileName, Utils::readLines);
+        }
     }
 }

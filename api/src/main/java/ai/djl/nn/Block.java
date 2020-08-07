@@ -18,13 +18,13 @@ import ai.djl.ndarray.NDManager;
 import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.LayoutType;
 import ai.djl.ndarray.types.Shape;
+import ai.djl.nn.convolutional.Conv2d;
 import ai.djl.training.ParameterStore;
 import ai.djl.training.initializer.Initializer;
 import ai.djl.util.PairList;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.util.List;
 
 /**
  * A {@code Block} is a composable function that forms a neural network.
@@ -43,14 +43,14 @@ import java.util.List;
  * </ul>
  *
  * <p>The core purpose of a {@code Block} is to perform an operation on the inputs, and return an
- * output. It is defined in the {@link #forward(ParameterStore, NDList) forward} method. The forward
- * function could be defined explicitly in terms of parameters or implicitly and could be a
- * combination of the functions of the child blocks.
+ * output. It is defined in the {@link #forward(ParameterStore, NDList, boolean) forward} method.
+ * The forward function could be defined explicitly in terms of parameters or implicitly and could
+ * be a combination of the functions of the child blocks.
  *
  * <p>The parameters of a {@code Block} are instances of {@link Parameter} which are required for
- * the operation in the forward function. For example, in a {@link ai.djl.nn.convolutional.Conv2D}
- * block, the parameters are {@code weight} and {@code bias}. During training, these parameters are
- * updated to reflect the training data, and that forms the crux of learning.
+ * the operation in the forward function. For example, in a {@link Conv2d} block, the parameters are
+ * {@code weight} and {@code bias}. During training, these parameters are updated to reflect the
+ * training data, and that forms the crux of learning.
  *
  * <p>When building these block functions, the easiest way is to use composition. Similar to how
  * functions are built by calling other functions, blocks can be built by combining other blocks. We
@@ -63,11 +63,10 @@ import java.util.List;
  *
  * <p>A block does not necessarily have to have children and parameters. For example, {@link
  * SequentialBlock}, and {@link ParallelBlock} don't have any parameters, but do have child blocks.
- * Similarly, {@link ai.djl.nn.convolutional.Conv2D} does not have children, but has parameters. We
- * recommend extending {@link ParameterBlock} to create blocks that don't have children. There can
- * be special cases where blocks have neither parameters nor children. One such example is {@link
- * LambdaBlock}. {@link LambdaBlock} takes in a function, and applies that function to its input in
- * the {@link #forward(ParameterStore, NDList) forward} method.
+ * Similarly, {@link Conv2d} does not have children, but has parameters. There can be special cases
+ * where blocks have neither parameters nor children. One such example is {@link LambdaBlock}.
+ * {@link LambdaBlock} takes in a function, and applies that function to its input in the {@link
+ * #forward(ParameterStore, NDList, boolean) forward} method.
  *
  * <p>Now that we understand the components of the block, we can explore what the block really
  * represents. A block combined with the recursive, hierarchical structure of its children forms a
@@ -100,7 +99,7 @@ import java.util.List;
  * fully-trained model.
  *
  * <p>See this tutorial on <a
- * href="https://github.com/awslabs/djl/blob/master/jupyter/tutorial/create_your_first_network.ipynb">creating
+ * href="https://github.com/awslabs/djl/blob/master/jupyter/tutorial/01_create_your_first_network.ipynb">creating
  * your first network</a>.
  */
 public interface Block {
@@ -111,10 +110,11 @@ public interface Block {
      *
      * @param parameterStore the parameter store
      * @param inputs the input NDList
+     * @param training true for a training forward pass
      * @return the output of the forward pass
      */
-    default NDList forward(ParameterStore parameterStore, NDList inputs) {
-        return forward(parameterStore, inputs, null);
+    default NDList forward(ParameterStore parameterStore, NDList inputs, boolean training) {
+        return forward(parameterStore, inputs, training, null);
     }
 
     /**
@@ -123,10 +123,35 @@ public interface Block {
      *
      * @param parameterStore the parameter store
      * @param inputs the input NDList
+     * @param training true for a training forward pass
      * @param params optional parameters
      * @return the output of the forward pass
      */
-    NDList forward(ParameterStore parameterStore, NDList inputs, PairList<String, Object> params);
+    NDList forward(
+            ParameterStore parameterStore,
+            NDList inputs,
+            boolean training,
+            PairList<String, Object> params);
+
+    /**
+     * A forward call using both training data and labels.
+     *
+     * <p>Within this forward call, it can be assumed that training is true.
+     *
+     * @param parameterStore the parameter store
+     * @param data the input data NDList
+     * @param labels the input labels NDList
+     * @param params optional parameters
+     * @return the output of the forward pass
+     * @see #forward(ParameterStore, NDList, boolean, PairList)
+     */
+    default NDList forward(
+            ParameterStore parameterStore,
+            NDList data,
+            NDList labels,
+            PairList<String, Object> params) {
+        return forward(parameterStore, data, true, params);
+    }
 
     /**
      * Sets an {@link Initializer} to the block.
@@ -193,7 +218,7 @@ public interface Block {
      *
      * @return the list of {@link Parameter}
      */
-    List<Parameter> getDirectParameters();
+    ParameterList getDirectParameters();
 
     /**
      * Returns a list of all the parameters of the block, including the parameters of its children

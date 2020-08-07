@@ -13,6 +13,7 @@
 package ai.djl.basicdataset.utils;
 
 import ai.djl.modality.nlp.SimpleVocabulary;
+import ai.djl.modality.nlp.Vocabulary;
 import ai.djl.modality.nlp.embedding.EmbeddingException;
 import ai.djl.modality.nlp.embedding.TextEmbedding;
 import ai.djl.modality.nlp.embedding.TrainableTextEmbedding;
@@ -21,8 +22,9 @@ import ai.djl.modality.nlp.preprocess.LowerCaseConvertor;
 import ai.djl.modality.nlp.preprocess.PunctuationSeparator;
 import ai.djl.modality.nlp.preprocess.SimpleTokenizer;
 import ai.djl.modality.nlp.preprocess.TextProcessor;
-import ai.djl.ndarray.NDList;
+import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDManager;
+import ai.djl.nn.AbstractBlock;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -37,13 +39,14 @@ import java.util.Locale;
  */
 public class TextData {
 
+    private List<NDArray> textEmbeddingList;
+    private List<String> rawText;
     private List<TextProcessor> textProcessors;
+    private List<String> reservedTokens;
     private TextEmbedding textEmbedding;
-    private SimpleVocabulary vocabulary;
-    private boolean trainEmbedding;
+    private Vocabulary vocabulary;
+    private String unknownToken;
     private int embeddingSize;
-
-    private List<List<String>> textData;
     private int size;
 
     /**
@@ -54,8 +57,10 @@ public class TextData {
     public TextData(Configuration config) {
         this.textProcessors = config.textProcessors;
         this.textEmbedding = config.textEmbedding;
-        this.trainEmbedding = config.trainEmbedding;
+        this.vocabulary = config.vocabulary;
         this.embeddingSize = config.embeddingSize;
+        this.unknownToken = config.unknownToken;
+        this.reservedTokens = config.reservedTokens;
     }
 
     /**
@@ -72,71 +77,62 @@ public class TextData {
 
         return new TextData.Configuration()
                 .setEmbeddingSize(15)
-                .setTrainEmbedding(false)
-                .setTextProcessors(defaultTextProcessors);
+                .setTextProcessors(defaultTextProcessors)
+                .setUnknownToken("<unk>")
+                .setReservedTokens(Arrays.asList("<bos>", "<eos>", "<pad>"));
     }
 
     /**
-     * Embds the text at a given index to an NDList.
+     * Preprocess the textData into {@link NDArray} by providing the data from the dataset.
      *
-     * <p>Follows an embedding strategy based on {@link #trainEmbedding}.
-     *
-     * @param index the index of the data to embed
-     * @param manager the manager for the embedded array
-     * @return the embedded array
-     * @throws EmbeddingException if the value could not be embedded
-     */
-    public NDList embedText(long index, NDManager manager) throws EmbeddingException {
-        int iindex = Math.toIntExact(index);
-        NDList data = new NDList();
-
-        List<String> sentenceTokens = textData.get(iindex);
-        if (trainEmbedding) {
-            data.add(textEmbedding.preprocessTextToEmbed(manager, sentenceTokens));
-        } else {
-            data.add(textEmbedding.embedText(manager, sentenceTokens));
-        }
-        return data;
-    }
-
-    /**
-     * Preprocess the textData by providing the data from the dataset.
-     *
+     * @param manager the
      * @param newTextData the data from the dataset
+     * @throws EmbeddingException if there is an error while embedding input
      */
-    public void preprocess(List<String> newTextData) {
-        SimpleVocabulary.VocabularyBuilder vocabularyBuilder =
-                new SimpleVocabulary.VocabularyBuilder();
-        vocabularyBuilder.optMinFrequency(3);
-        vocabularyBuilder.optReservedTokens(Arrays.asList("<pad>", "<bos>", "<eos>"));
-
-        if (textData == null) {
-            textData = new ArrayList<>();
-        }
+    public void preprocess(NDManager manager, List<String> newTextData) throws EmbeddingException {
+        rawText = newTextData;
+        List<List<String>> textData = new ArrayList<>();
         for (String textDatum : newTextData) {
             List<String> tokens = Collections.singletonList(textDatum);
             for (TextProcessor processor : textProcessors) {
                 tokens = processor.preprocess(tokens);
             }
-            vocabularyBuilder.add(tokens);
             textData.add(tokens);
         }
-        vocabulary = vocabularyBuilder.build();
-        for (int i = 0; i < textData.size(); i++) {
-            List<String> tokenizedTextDatum = textData.get(i);
-            for (int j = 0; j < tokenizedTextDatum.size(); j++) {
-                if (!vocabulary.isKnownToken(tokenizedTextDatum.get(j))) {
-                    tokenizedTextDatum.set(j, vocabulary.getUnknownToken());
-                }
+
+        if (vocabulary == null) {
+            SimpleVocabulary.VocabularyBuilder vocabularyBuilder =
+                    new SimpleVocabulary.VocabularyBuilder();
+            vocabularyBuilder
+                    .optMinFrequency(3)
+                    .optReservedTokens(reservedTokens)
+                    .optUnknownToken(unknownToken);
+            for (List<String> tokens : textData) {
+                vocabularyBuilder.add(tokens);
             }
-            textData.set(i, tokenizedTextDatum);
+            vocabulary = vocabularyBuilder.build();
         }
-        size = textData.size();
+
         if (textEmbedding == null) {
             textEmbedding =
                     new TrainableTextEmbedding(
                             new TrainableWordEmbedding(vocabulary, embeddingSize));
-            trainEmbedding = true;
+        }
+        size = textData.size();
+        textEmbeddingList = new ArrayList<>();
+        for (int i = 0; i < size; i++) {
+            List<String> tokenizedTextDatum = textData.get(i);
+            for (int j = 0; j < tokenizedTextDatum.size(); j++) {
+                tokenizedTextDatum.set(
+                        j, vocabulary.getToken(vocabulary.getIndex(tokenizedTextDatum.get(j))));
+            }
+            textData.set(i, tokenizedTextDatum);
+            if (textEmbedding instanceof AbstractBlock) {
+                textEmbeddingList.add(
+                        manager.create(textEmbedding.preprocessTextToEmbed(tokenizedTextDatum)));
+            } else {
+                textEmbeddingList.add(textEmbedding.embedText(manager, tokenizedTextDatum));
+            }
         }
     }
 
@@ -168,18 +164,9 @@ public class TextData {
     }
 
     /**
-     * Sets whether to train the textEmbedding.
+     * Sets the embedding size.
      *
-     * @param trainEmbedding true to train the text embedding
-     */
-    public void setTrainEmbedding(boolean trainEmbedding) {
-        this.trainEmbedding = trainEmbedding;
-    }
-
-    /**
-     * Sets the default embedding size.
-     *
-     * @param embeddingSize the default embedding size
+     * @param embeddingSize the embedding size
      */
     public void setEmbeddingSize(int embeddingSize) {
         this.embeddingSize = embeddingSize;
@@ -190,12 +177,49 @@ public class TextData {
      *
      * @return the {@link SimpleVocabulary}
      */
-    public SimpleVocabulary getVocabulary() {
+    public Vocabulary getVocabulary() {
         if (vocabulary == null) {
             throw new IllegalStateException(
                     "This method must be called after preprocess is called on this object");
         }
         return vocabulary;
+    }
+
+    /**
+     * Gets the text embedding for the given index of the text input.
+     *
+     * @param manager the manager for the embedding array
+     * @param index the index of the text input
+     * @return the {@link NDArray} containing the text embedding
+     */
+    public NDArray getEmbedding(NDManager manager, long index) {
+        NDArray embedding = textEmbeddingList.get(Math.toIntExact(index)).duplicate();
+        embedding.attach(manager);
+        return embedding;
+    }
+
+    /**
+     * Gets the raw textual input.
+     *
+     * @param index the index of the text input
+     * @return the raw text
+     */
+    public String getRawText(long index) {
+        return rawText.get(Math.toIntExact(index));
+    }
+
+    /**
+     * Gets the textual input after preprocessing.
+     *
+     * @param index the index of the text input
+     * @return the list of processed tokens
+     */
+    public List<String> getProcessedText(long index) {
+        List<String> tokens = Collections.singletonList(getRawText(index));
+        for (TextProcessor processor : textProcessors) {
+            tokens = processor.preprocess(tokens);
+        }
+        return tokens;
     }
 
     /**
@@ -215,8 +239,10 @@ public class TextData {
 
         private List<TextProcessor> textProcessors;
         private TextEmbedding textEmbedding;
-        private Boolean trainEmbedding;
+        private Vocabulary vocabulary;
         private Integer embeddingSize;
+        private String unknownToken;
+        private List<String> reservedTokens;
 
         /**
          * Sets the {@link TextProcessor}s to use for the text data.
@@ -241,13 +267,13 @@ public class TextData {
         }
 
         /**
-         * Sets whether to train the {@link TextEmbedding}.
+         * Sets the {@link Vocabulary} to use to hold the text data.
          *
-         * @param trainEmbedding true to train the {@link TextEmbedding}
+         * @param vocabulary the {@link Vocabulary}
          * @return this configuration
          */
-        public Configuration setTrainEmbedding(boolean trainEmbedding) {
-            this.trainEmbedding = trainEmbedding;
+        public Configuration setVocabulary(Vocabulary vocabulary) {
+            this.vocabulary = vocabulary;
             return this;
         }
 
@@ -263,6 +289,28 @@ public class TextData {
         }
 
         /**
+         * Sets the default unknown token.
+         *
+         * @param unknownToken the {@link String} value of unknown token
+         * @return this configuration
+         */
+        public Configuration setUnknownToken(String unknownToken) {
+            this.unknownToken = unknownToken;
+            return this;
+        }
+
+        /**
+         * Sets the list of reserved tokens.
+         *
+         * @param reservedTokens true to train the text embedding
+         * @return this configuration
+         */
+        public Configuration setReservedTokens(List<String> reservedTokens) {
+            this.reservedTokens = reservedTokens;
+            return this;
+        }
+
+        /**
          * Updates this {@link Configuration} with the non-null values from another configuration.
          *
          * @param other the other configuration to use to update this
@@ -271,8 +319,10 @@ public class TextData {
         public Configuration update(Configuration other) {
             textProcessors = other.textProcessors != null ? other.textProcessors : textProcessors;
             textEmbedding = other.textEmbedding != null ? other.textEmbedding : textEmbedding;
-            trainEmbedding = other.trainEmbedding != null ? other.trainEmbedding : trainEmbedding;
+            vocabulary = other.vocabulary != null ? other.vocabulary : vocabulary;
             embeddingSize = other.embeddingSize != null ? other.embeddingSize : embeddingSize;
+            unknownToken = other.unknownToken != null ? other.unknownToken : unknownToken;
+            reservedTokens = other.reservedTokens != null ? other.reservedTokens : reservedTokens;
             return this;
         }
     }

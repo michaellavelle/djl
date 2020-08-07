@@ -1,7 +1,6 @@
 configure([
         project(':api'),
         project(':basicdataset'),
-        project(':examples'),
         project(':model-zoo'),
         project(':mxnet:mxnet-engine'),
         project(':mxnet:mxnet-model-zoo'),
@@ -10,9 +9,10 @@ configure([
         project(':tensorflow:tensorflow-api'),
         project(':tensorflow:tensorflow-engine'),
         project(':tensorflow:tensorflow-model-zoo'),
-        project(':tensorflow:tensorflow-native-auto'),
-        project(':fasttext:fasttext-engine'),
-        project(':3rdparty:aws-ai')]) {
+        project(':onnxruntime:onnxruntime-engine'),
+        project(':extensions:aws-ai'),
+        project(':extensions:fasttext'),
+        project(':extensions:hadoop')]) {
     apply plugin: "maven-publish"
     apply plugin: "signing"
 
@@ -45,13 +45,6 @@ configure([
         def signingPassword = findProperty("signingPassword")
         useInMemoryPgpKeys(signingKey, signingPassword)
         sign publishing.publications
-    }
-
-    if (JavaVersion.current() != JavaVersion.VERSION_1_8) {
-        if (gradle.startParameter.taskNames.contains("publish")) {
-            throw new GradleException("JDK 1.8 is required to run publish task.")
-        }
-        return
     }
 
     publishing {

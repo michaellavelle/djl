@@ -13,12 +13,15 @@
 package ai.djl.integration.tests.model_zoo.classification;
 
 import ai.djl.Application;
+import ai.djl.Device;
 import ai.djl.MalformedModelException;
 import ai.djl.Model;
 import ai.djl.basicmodelzoo.BasicModelZoo;
 import ai.djl.basicmodelzoo.cv.classification.ResNetV1;
 import ai.djl.inference.Predictor;
+import ai.djl.integration.util.TestUtils;
 import ai.djl.modality.Classifications;
+import ai.djl.modality.cv.Image;
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.NDManager;
@@ -31,20 +34,20 @@ import ai.djl.repository.zoo.ModelZoo;
 import ai.djl.repository.zoo.ZooModel;
 import ai.djl.testing.Assertions;
 import ai.djl.training.DefaultTrainingConfig;
+import ai.djl.training.EasyTrain;
 import ai.djl.training.Trainer;
 import ai.djl.training.TrainingConfig;
 import ai.djl.training.dataset.Batch;
 import ai.djl.training.initializer.Initializer;
 import ai.djl.training.loss.Loss;
 import ai.djl.translate.Batchifier;
+import ai.djl.translate.NoopTranslator;
 import ai.djl.translate.TranslateException;
-import ai.djl.translate.Translator;
-import ai.djl.translate.TranslatorContext;
 import ai.djl.util.PairList;
-import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
+import org.testng.SkipException;
 import org.testng.annotations.Test;
 
 public class ResnetTest {
@@ -53,6 +56,7 @@ public class ResnetTest {
     public void testTrain() {
         TrainingConfig config =
                 new DefaultTrainingConfig(Loss.softmaxCrossEntropyLoss())
+                        .optDevices(Device.getDevices(2))
                         .optInitializer(Initializer.ONES);
 
         Block resNet50 =
@@ -61,11 +65,10 @@ public class ResnetTest {
                         .setNumLayers(50)
                         .setOutSize(10)
                         .build();
-
-        try (Model model = Model.newInstance()) {
+        try (Model model = Model.newInstance("resnet")) {
             model.setBlock(resNet50);
             try (Trainer trainer = model.newTrainer(config)) {
-                int batchSize = config.getDevices().length * 16;
+                int batchSize = 1;
                 Shape inputShape = new Shape(batchSize, 1, 28, 28);
                 trainer.initialize(inputShape);
 
@@ -79,9 +82,10 @@ public class ResnetTest {
                                 new NDList(input),
                                 new NDList(label),
                                 batchSize,
+                                Batchifier.STACK,
                                 Batchifier.STACK);
                 PairList<String, Parameter> parameters = resNet50.getParameters();
-                trainer.trainBatch(batch);
+                EasyTrain.trainBatch(trainer, batch);
                 trainer.step();
                 NDArray expectedAtIndex0 = manager.ones(new Shape(16, 1, 3, 3));
                 NDArray expectedAtIndex1 = manager.ones(new Shape(16, 16, 3, 3));
@@ -100,8 +104,8 @@ public class ResnetTest {
     public void testLoadPredict()
             throws IOException, ModelNotFoundException, TranslateException,
                     MalformedModelException {
-        try (ZooModel<BufferedImage, Classifications> model = getModel()) {
-            try (Predictor<NDList, NDList> predictor = model.newPredictor(new TestTranslator())) {
+        try (ZooModel<Image, Classifications> model = getModel()) {
+            try (Predictor<NDList, NDList> predictor = model.newPredictor(new NoopTranslator())) {
                 NDList input = new NDList(model.getNDManager().ones(new Shape(3, 32, 32)));
                 List<NDList> inputs = Collections.nCopies(16, input);
                 predictor.batchPredict(inputs);
@@ -112,11 +116,13 @@ public class ResnetTest {
     @Test
     public void testLoadTrain()
             throws IOException, ModelNotFoundException, MalformedModelException {
-        try (ZooModel<BufferedImage, Classifications> model = getModel()) {
+        try (ZooModel<Image, Classifications> model = getModel()) {
             TrainingConfig config =
-                    new DefaultTrainingConfig(Loss.l1Loss()).optInitializer(Initializer.ONES);
+                    new DefaultTrainingConfig(Loss.l1Loss())
+                            .optDevices(Device.getDevices(2))
+                            .optInitializer(Initializer.ONES);
             try (Trainer trainer = model.newTrainer(config)) {
-                int batchSize = config.getDevices().length * 16;
+                int batchSize = 2;
                 Shape inputShape = new Shape(batchSize, 3, 32, 32);
 
                 trainer.initialize(inputShape);
@@ -133,19 +139,23 @@ public class ResnetTest {
                                 new NDList(data),
                                 new NDList(label),
                                 batchSize,
+                                Batchifier.STACK,
                                 Batchifier.STACK);
-                trainer.trainBatch(batch);
+                EasyTrain.trainBatch(trainer, batch);
             }
         }
     }
 
-    private ZooModel<BufferedImage, Classifications> getModel()
+    private ZooModel<Image, Classifications> getModel()
             throws IOException, ModelNotFoundException, MalformedModelException {
+        if (!TestUtils.isMxnet()) {
+            throw new SkipException("Resnet50-cifar10 model only available in MXNet");
+        }
 
-        Criteria<BufferedImage, Classifications> criteria =
+        Criteria<Image, Classifications> criteria =
                 Criteria.builder()
                         .optApplication(Application.CV.IMAGE_CLASSIFICATION)
-                        .setTypes(BufferedImage.class, Classifications.class)
+                        .setTypes(Image.class, Classifications.class)
                         .optGroupId(BasicModelZoo.GROUP_ID)
                         .optArtifactId("resnet")
                         .optFilter("layers", "50")
@@ -153,20 +163,5 @@ public class ResnetTest {
                         .build();
 
         return ModelZoo.loadModel(criteria);
-    }
-
-    private static class TestTranslator implements Translator<NDList, NDList> {
-
-        /** {@inheritDoc} */
-        @Override
-        public NDList processOutput(TranslatorContext ctx, NDList list) {
-            return list;
-        }
-
-        /** {@inheritDoc} */
-        @Override
-        public NDList processInput(TranslatorContext ctx, NDList input) {
-            return input;
-        }
     }
 }

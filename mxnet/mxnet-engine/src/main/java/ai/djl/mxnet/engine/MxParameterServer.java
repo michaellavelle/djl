@@ -26,6 +26,12 @@ import java.util.Arrays;
 /** {@code MxParameterServer} is the MXNet implementation of {@link ParameterServer}. */
 public class MxParameterServer extends NativeResource implements ParameterServer {
 
+    @SuppressWarnings("PMD.SingularField")
+    // use class field to hold the OptimizerCallback which prevent it from being gc.
+    private OptimizerCallback callback;
+
+    private int priority;
+
     /**
      * Constructs a new {@code MxParameterServer}.
      *
@@ -33,8 +39,9 @@ public class MxParameterServer extends NativeResource implements ParameterServer
      */
     public MxParameterServer(Optimizer optimizer) {
         super(createdKVStore());
-        JnaUtils.parameterStoreSetUpdater(
-                getHandle(), null, new OptimizerCallback(optimizer), null);
+        callback = new OptimizerCallback(optimizer);
+        JnaUtils.parameterStoreSetUpdater(getHandle(), null, callback, null);
+        priority = 0;
     }
 
     /** {@inheritDoc} */
@@ -48,20 +55,21 @@ public class MxParameterServer extends NativeResource implements ParameterServer
 
     /** {@inheritDoc} */
     @Override
-    public void push(String parameterId, NDArray[] grads, int priority) {
-        String[] keys = new String[grads.length];
-        Arrays.fill(keys, parameterId);
-        NDList vals = new NDList(grads);
-        JnaUtils.parameterStorePush(getHandle(), grads.length, keys, vals, priority);
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public void pull(String parameterId, NDArray[] weights, int priority) {
-        String[] keys = new String[weights.length];
-        Arrays.fill(keys, parameterId);
-        NDList vals = new NDList(weights);
-        JnaUtils.parameterStorePull(getHandle(), weights.length, keys, vals, priority);
+    public void update(String parameterId, NDArray[] grads, NDArray[] params) {
+        String[] gradKeys = new String[grads.length];
+        String[] paramKeys = new String[params.length];
+        Arrays.fill(gradKeys, parameterId);
+        Arrays.fill(paramKeys, parameterId);
+        JnaUtils.parameterStorePushPull(
+                getHandle(),
+                grads.length,
+                gradKeys,
+                params.length,
+                paramKeys,
+                new NDList(grads),
+                new NDList(params),
+                -priority);
+        priority++;
     }
 
     private static Pointer createdKVStore() {

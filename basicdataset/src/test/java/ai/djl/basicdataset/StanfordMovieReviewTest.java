@@ -40,12 +40,12 @@ public class StanfordMovieReviewTest {
                                                     TestUtils.getTextEmbedding(
                                                             manager, EMBEDDING_SIZE)))
                             .setSampling(32, true)
+                            .optLimit(100)
                             .build();
-            dataset.prepare();
 
+            dataset.prepare();
             Record record = dataset.get(manager, 0);
             Assert.assertEquals(record.getData().get(0).getShape().dimension(), 2);
-            Assert.assertEquals(record.getData().get(0).getShape().get(1), EMBEDDING_SIZE);
             Assert.assertEquals(record.getLabels().get(0).getShape().dimension(), 0);
         }
     }
@@ -60,21 +60,20 @@ public class StanfordMovieReviewTest {
                                             .setTextEmbedding(
                                                     TestUtils.getTextEmbedding(
                                                             manager, EMBEDDING_SIZE))
-                                            .setEmbeddingSize(EMBEDDING_SIZE)
-                                            .setTrainEmbedding(true))
+                                            .setEmbeddingSize(EMBEDDING_SIZE))
                             .setTargetConfiguration(
                                     new Configuration()
                                             .setTextEmbedding(
                                                     TestUtils.getTextEmbedding(
                                                             manager, EMBEDDING_SIZE))
-                                            .setEmbeddingSize(EMBEDDING_SIZE)
-                                            .setTrainEmbedding(true))
+                                            .setEmbeddingSize(EMBEDDING_SIZE))
                             .setSampling(32, true)
+                            .optLimit(100)
                             .build();
-            dataset.prepare();
 
+            dataset.prepare();
             Record record = dataset.get(manager, 0);
-            Assert.assertEquals(record.getData().get(0).getShape().dimension(), 1);
+            Assert.assertEquals(record.getData().get(0).getShape().dimension(), 2);
             Assert.assertEquals(record.getLabels().get(0).getShape().dimension(), 0);
         }
     }

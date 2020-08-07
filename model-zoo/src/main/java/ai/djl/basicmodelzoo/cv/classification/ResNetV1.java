@@ -19,7 +19,7 @@ import ai.djl.nn.Block;
 import ai.djl.nn.Blocks;
 import ai.djl.nn.ParallelBlock;
 import ai.djl.nn.SequentialBlock;
-import ai.djl.nn.convolutional.Conv2D;
+import ai.djl.nn.convolutional.Conv2d;
 import ai.djl.nn.core.Linear;
 import ai.djl.nn.norm.BatchNorm;
 import ai.djl.nn.pooling.Pool;
@@ -58,11 +58,11 @@ public final class ResNetV1 {
         SequentialBlock resUnit = new SequentialBlock();
         if (bottleneck) {
             resUnit.add(
-                            Conv2D.builder()
-                                    .setKernel(new Shape(1, 1))
-                                    .setNumFilters(numFilters / 4)
+                            Conv2d.builder()
+                                    .setKernelShape(new Shape(1, 1))
+                                    .setFilters(numFilters / 4)
                                     .optStride(stride)
-                                    .optPad(new Shape(0, 0))
+                                    .optPadding(new Shape(0, 0))
                                     .optBias(true)
                                     .build())
                     .add(
@@ -72,11 +72,11 @@ public final class ResNetV1 {
                                     .build())
                     .add(Activation::relu)
                     .add(
-                            Conv2D.builder()
-                                    .setKernel(new Shape(3, 3))
-                                    .setNumFilters(numFilters / 4)
+                            Conv2d.builder()
+                                    .setKernelShape(new Shape(3, 3))
+                                    .setFilters(numFilters / 4)
                                     .optStride(new Shape(1, 1))
-                                    .optPad(new Shape(1, 1))
+                                    .optPadding(new Shape(1, 1))
                                     .optBias(false)
                                     .build())
                     .add(
@@ -86,11 +86,11 @@ public final class ResNetV1 {
                                     .build())
                     .add(Activation::relu)
                     .add(
-                            Conv2D.builder()
-                                    .setKernel(new Shape(1, 1))
-                                    .setNumFilters(numFilters)
+                            Conv2d.builder()
+                                    .setKernelShape(new Shape(1, 1))
+                                    .setFilters(numFilters)
                                     .optStride(new Shape(1, 1))
-                                    .optPad(new Shape(0, 0))
+                                    .optPadding(new Shape(0, 0))
                                     .optBias(true)
                                     .build())
                     .add(
@@ -101,11 +101,11 @@ public final class ResNetV1 {
 
         } else {
             resUnit.add(
-                            Conv2D.builder()
-                                    .setKernel(new Shape(3, 3))
-                                    .setNumFilters(numFilters)
+                            Conv2d.builder()
+                                    .setKernelShape(new Shape(3, 3))
+                                    .setFilters(numFilters)
                                     .optStride(stride)
-                                    .optPad(new Shape(1, 1))
+                                    .optPadding(new Shape(1, 1))
                                     .optBias(false)
                                     .build())
                     .add(
@@ -115,11 +115,11 @@ public final class ResNetV1 {
                                     .build())
                     .add(Activation::relu)
                     .add(
-                            Conv2D.builder()
-                                    .setKernel(new Shape(3, 3))
-                                    .setNumFilters(numFilters)
+                            Conv2d.builder()
+                                    .setKernelShape(new Shape(3, 3))
+                                    .setFilters(numFilters)
                                     .optStride(new Shape(1, 1))
-                                    .optPad(new Shape(1, 1))
+                                    .optPadding(new Shape(1, 1))
                                     .optBias(false)
                                     .build())
                     .add(
@@ -133,11 +133,11 @@ public final class ResNetV1 {
             shortcut.add(Blocks.identityBlock());
         } else {
             shortcut.add(
-                            Conv2D.builder()
-                                    .setKernel(new Shape(1, 1))
-                                    .setNumFilters(numFilters)
+                            Conv2d.builder()
+                                    .setKernelShape(new Shape(1, 1))
+                                    .setFilters(numFilters)
                                     .optStride(stride)
-                                    .optPad(new Shape(0, 0))
+                                    .optPadding(new Shape(0, 0))
                                     .optBias(false)
                                     .build())
                     .add(
@@ -172,20 +172,20 @@ public final class ResNetV1 {
         SequentialBlock resNet = new SequentialBlock();
         if (height <= 32) {
             resNet.add(
-                    Conv2D.builder()
-                            .setKernel(new Shape(3, 3))
-                            .setNumFilters(builder.filters[0])
+                    Conv2d.builder()
+                            .setKernelShape(new Shape(3, 3))
+                            .setFilters(builder.filters[0])
                             .optStride(new Shape(1, 1))
-                            .optPad(new Shape(1, 1))
+                            .optPadding(new Shape(1, 1))
                             .optBias(false)
                             .build());
         } else {
             resNet.add(
-                            Conv2D.builder()
-                                    .setKernel(new Shape(7, 7))
-                                    .setNumFilters(builder.filters[0])
+                            Conv2d.builder()
+                                    .setKernelShape(new Shape(7, 7))
+                                    .setFilters(builder.filters[0])
                                     .optStride(new Shape(2, 2))
-                                    .optPad(new Shape(3, 3))
+                                    .optPadding(new Shape(3, 3))
                                     .optBias(false)
                                     .build())
                     .add(
@@ -194,7 +194,7 @@ public final class ResNetV1 {
                                     .optMomentum(builder.batchNormMomentum)
                                     .build())
                     .add(Activation.reluBlock())
-                    .add(Pool.maxPool2DBlock(new Shape(3, 3), new Shape(2, 2), new Shape(1, 1)));
+                    .add(Pool.maxPool2dBlock(new Shape(3, 3), new Shape(2, 2), new Shape(1, 1)));
         }
         Shape resStride = new Shape(1, 1);
         for (int i = 0; i < numStages; i++) {
@@ -218,9 +218,9 @@ public final class ResNetV1 {
                 resStride = new Shape(2, 2);
             }
         }
-        return resNet.add(Pool.globalAvgPool2DBlock())
+        return resNet.add(Pool.globalAvgPool2dBlock())
                 .add(Blocks.batchFlattenBlock())
-                .add(Linear.builder().setOutChannels(builder.outSize).build())
+                .add(Linear.builder().setUnits(builder.outSize).build())
                 .add(Blocks.batchFlattenBlock());
     }
 
@@ -261,7 +261,7 @@ public final class ResNetV1 {
         /**
          * Sets the size of the output.
          *
-         * @param outSize the number of layers
+         * @param outSize the output size
          * @return this {@code Builder}
          */
         public Builder setOutSize(long outSize) {
@@ -270,13 +270,13 @@ public final class ResNetV1 {
         }
 
         /**
-         * Sets the size of the output.
+         * Sets the momentum of batchNorm layer.
          *
-         * @param batchNormMomemtum the number of layers
+         * @param batchNormMomentum the momentum
          * @return this {@code Builder}
          */
-        public Builder optBatchNormMomemtum(float batchNormMomemtum) {
-            this.batchNormMomentum = batchNormMomemtum;
+        public Builder optBatchNormMomentum(float batchNormMomentum) {
+            this.batchNormMomentum = batchNormMomentum;
             return this;
         }
 

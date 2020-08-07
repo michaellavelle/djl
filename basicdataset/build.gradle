@@ -7,6 +7,8 @@ repositories {
 dependencies {
     api project(":api")
 
+    // Add following dependency to your project for COCO dataset
+    // runtimeOnly "com.twelvemonkeys.imageio:imageio-jpeg:3.5"
     testImplementation("org.testng:testng:${testng_version}") {
         exclude group: "junit", module: "junit"
     }
@@ -14,7 +16,9 @@ dependencies {
 
     testImplementation project(":testing")
     testImplementation project(":mxnet:mxnet-engine")
-    testRuntimeOnly "ai.djl.mxnet:mxnet-native-auto:${mxnet_version}-SNAPSHOT"
+    testRuntimeOnly "ai.djl.mxnet:mxnet-native-auto:${mxnet_version}"
+
+    implementation 'org.apache.commons:commons-csv:1.8'
 }
 
 task syncS3(type: Exec) {

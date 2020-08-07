@@ -6,7 +6,7 @@ In this example, you learn how to train the MNIST dataset with Deep Java Library
 
 The source code for this example can be found at [TrainMnist.java](https://github.com/awslabs/djl/blob/master/examples/src/main/java/ai/djl/examples/training/TrainMnist.java).
 
-You can also use the [Jupyter notebook tutorial](../../jupyter/tutorial/train_your_first_model.ipynb).
+You can also use the [Jupyter notebook tutorial](../../jupyter/tutorial/02_train_your_first_model.ipynb).
 The Jupyter notebook explains the key concepts in detail.
 
 ## Setup guide
@@ -23,7 +23,9 @@ The following command trains the model for two epochs. The trained model is save
 cd examples
 ./gradlew run -Dmain=ai.djl.examples.training.TrainMnist
 ```
+
 Your output should look like the following:
+
 ```text
 [INFO ] - Running TrainMnist on: cpu(0), epoch: 2.
 [INFO ] - Load library 1.5.0 in 0.121 ms.

@@ -18,16 +18,12 @@ import ai.djl.ndarray.NDManager;
 import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.AbstractBlock;
-import ai.djl.nn.BlockList;
-import ai.djl.nn.Parameter;
 import ai.djl.training.ParameterStore;
 import ai.djl.util.PairList;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
 
 /**
  * {@code EncoderDecoder} is a general implementation of the very popular encoder-decoder
@@ -36,6 +32,9 @@ import java.util.List;
  * translation(text-text), image captioning(image-text) etc.
  */
 public class EncoderDecoder extends AbstractBlock {
+
+    private static final byte VERSION = 1;
+
     protected Encoder encoder;
     protected Decoder decoder;
 
@@ -47,8 +46,9 @@ public class EncoderDecoder extends AbstractBlock {
      * @param decoder the {@link Decoder}
      */
     public EncoderDecoder(Encoder encoder, Decoder decoder) {
-        this.encoder = encoder;
-        this.decoder = decoder;
+        super(VERSION);
+        this.encoder = addChildBlock("Encoder", encoder);
+        this.decoder = addChildBlock("Decoder", decoder);
     }
 
     /** {@inheritDoc} */
@@ -61,63 +61,36 @@ public class EncoderDecoder extends AbstractBlock {
         return new PairList<>(inputNames, Arrays.asList(inputShapes));
     }
 
-    /**
-     * Applies the forward function of the encoder and the decoder. This method should be called
-     * only on blocks that are initialized.
-     *
-     * @param parameterStore the parameter store
-     * @param encoderInputs the input for the encoder
-     * @param decoderInputs the input for the decoder
-     * @param params optional parameters
-     * @return the output of the forward pass
-     */
+    /** {@inheritDoc} */
+    @Override
+    public NDList forward(ParameterStore parameterStore, NDList inputs, boolean training) {
+        return forward(parameterStore, inputs, training, null);
+    }
+
+    /** {@inheritDoc} */
+    @Override
     public NDList forward(
             ParameterStore parameterStore,
-            NDList encoderInputs,
-            NDList decoderInputs,
+            NDList inputs,
+            boolean training,
             PairList<String, Object> params) {
-        NDList encoderOutputs = encoder.forward(parameterStore, encoderInputs, params);
-        decoder.initState(encoder.getState(encoderOutputs));
-        return decoder.forward(parameterStore, decoderInputs, params);
+        if (training) {
+            throw new IllegalArgumentException("You must use forward with labels when training");
+        }
+        throw new UnsupportedOperationException(
+                "EncoderDecoder prediction has not been implemented yet");
     }
 
-    /**
-     * Applies the forward function of the encoder and the decoder. This method should be called
-     * only on blocks that are initialized.
-     *
-     * <p>This forward function in the {@code EncoderDecoder} class assumes the input {@link NDList}
-     * contains both the encoder and decoder inputs. Further, it assumes that the first index in the
-     * input {@link NDList} contains the encoder input and the second index contains the decoder
-     * input.
-     *
-     * @param parameterStore the parameter store
-     * @param inputs the input NDList
-     * @param params optional parameters
-     * @return the output of the forward pass
-     */
+    /** {@inheritDoc} */
     @Override
     public NDList forward(
-            ParameterStore parameterStore, NDList inputs, PairList<String, Object> params) {
-        return forward(
-                parameterStore, new NDList(inputs.get(0)), new NDList(inputs.get(1)), params);
-    }
-
-    /**
-     * Applies the forward function of the encoder and the decoder. This method should be called
-     * only on blocks that are initialized.
-     *
-     * <p>This forward function in the {@code EncoderDecoder} class assumes the input {@link NDList}
-     * contains both the encoder and decoder inputs. Further, it assumes that the first index in the
-     * input {@link NDList} contains the encoder input and the second index contains the decoder
-     * input.
-     *
-     * @param parameterStore the parameter store
-     * @param inputs the input NDList
-     * @return the output of the forward pass
-     */
-    @Override
-    public NDList forward(ParameterStore parameterStore, NDList inputs) {
-        return forward(parameterStore, inputs, null);
+            ParameterStore parameterStore,
+            NDList data,
+            NDList labels,
+            PairList<String, Object> params) {
+        NDList encoderOutputs = encoder.forward(parameterStore, data, true, params);
+        decoder.initState(encoder.getStates(encoderOutputs));
+        return decoder.forward(parameterStore, labels, true, params);
     }
 
     /**
@@ -136,26 +109,6 @@ public class EncoderDecoder extends AbstractBlock {
         beforeInitialize(inputShapes);
         encoder.initialize(manager, dataType, inputShapes[0]);
         return decoder.initialize(manager, dataType, inputShapes[1]);
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public BlockList getChildren() {
-        BlockList children = encoder.getChildren();
-        children.addAll(decoder.getChildren());
-        return children;
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public List<Parameter> getDirectParameters() {
-        return Collections.emptyList();
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public Shape getParameterShape(String name, Shape[] inputShapes) {
-        throw new IllegalArgumentException("EncodeDecoder blocks have no direct parameters");
     }
 
     /** {@inheritDoc} */

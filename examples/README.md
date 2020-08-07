@@ -1,4 +1,4 @@
-# DJL - examples
+# Examples
 
 This module contains examples to demonstrate use of the Deep Java Library (DJL).
 
@@ -20,16 +20,24 @@ The following examples are included for inference:
 - [Pose estimation example](docs/pose_estimation.md)
 - [Action recognition example](docs/action_recognition.md)
 
-These examples focus on the overall experience of training and inference. We keep components that are reusable within separate modules for other users to take advantage of in their own applications. For examples and references on creating datasets, look at the [basic dataset module](../basicdataset). For examples and references on building models and translators, look in our [main model zoo](../model-zoo).
+These examples focus on the overall experience of training and inference. We keep components
+that are reusable within separate modules for other users to take advantage of in their own
+applications. For examples and references on creating datasets, look at the
+[basic dataset module](https://github.com/awslabs/djl/tree/master/basicdataset).
+For examples and references on building models and translators, look in our
+[basic model zoo](https://github.com/awslabs/djl/tree/master/model-zoo).
 
-You may be able to find more translator examples in our engine specific model zoos: [mxnet](../mxnet/mxnet-model-zoo), [pytorch](../pytorch/pytorch-model-zoo), and [tensorflow](../tensorflow/tensorflow-model-zoo).
+You may be able to find more translator examples in our engine specific model zoos:
+[Apache MXNet](https://github.com/awslabs/djl/tree/master/mxnet/mxnet-model-zoo),
+[PyTorch](https://github.com/awslabs/djl/tree/master/pytorch/pytorch-model-zoo),
+and [TensorFlow](https://github.com/awslabs/djl/tree/master/tensorflow/tensorflow-model-zoo).
 
 More examples and demos of applications featuring DJL are located in our [demo repository](https://github.com/aws-samples/djl-demo).
 
 ## Prerequisites
 
 * You need to have Java Development Kit version 8 or later installed on your system. For more information, see [Setup](../docs/development/setup.md).
-* You should be familiar with the API documentation in the DJL [Javadoc](https://javadoc.djl.ai/api/0.4.0/index.html).
+* You should be familiar with the API documentation in the DJL [Javadoc](https://javadoc.io/doc/ai.djl/api/latest/index.html).
 
 
 # Getting started: 30 seconds to run an example
@@ -39,12 +47,19 @@ More examples and demos of applications featuring DJL are located in our [demo r
 This example supports building with both Gradle and Maven. To build, use either of the following commands:
 
 * Gradle build
+
     ```sh
     cd examples
+
+    # for Linux/macOS:
     ./gradlew jar
+
+    # for Windows:
+    ..\gradlew jar
     ```
 
 * Maven build
+
     ```sh
     cd examples
     mvn package -DskipTests
@@ -57,25 +72,35 @@ For more information on running each example, see the example's documentation.
 The following command executes an object detection example:
 
 * Gradle
+
     ```sh
     cd examples
+
+    # for Linux/macOS:
     ./gradlew run
+
+    # for Windows:
+    ..\gradlew run
     ```
 
 * Maven
+
     ```sh
     cd examples
-    mvn package -DskipTests
-    mvn exec:java -Dexec.mainClass="ai.djl.examples.inference.ObjectDetection"
+    mvn clean package -DskipTests
+    mvn exec:java
     ```
 
 ## Engine selection
 
 DJL is engine agnostic, so it's capable of supporting different backends.
 
-With MXNet and PyTorch, you can choose different builds of the native library.
+With Apache MXNet, PyTorch, TensorFlow and ONNX Runtime, you can choose different builds of the native library.
 We recommend the automatic engine selection which downloads the best engine for your platform and available hardware during the first runtime.
-Activate the automatic selection by adding `ai.djl.mxnet:mxnet-native-auto:1.6.0-SNAPSHOT` for mxnet and `ai.djl.pytorch:pytorch-native-auto:1.4.0-SNAPSHOT` as a dependency.
-You can also see [MXNet Engine](../mxnet/mxnet-engine/README.md) and [PyTorch Engine](../pytorch/pytorch-engine/README.md) for further options.
-
-
+Activate the automatic selection by adding `ai.djl.mxnet:mxnet-native-auto:1.7.0-b` for MXNet and `ai.djl.pytorch:pytorch-native-auto:1.5.0` for PyTorh as a dependency.
+You can also see:
+ 
+- [MXNet Engine](../mxnet/mxnet-engine/README.md)
+- [PyTorch Engine](../pytorch/pytorch-engine/README.md)
+- [TensorFlow Engine](../tensorflow/tensorflow-engine/README.md)
+- [ONNX Runtime Engine](../onnxruntime/onnxruntime-engine/README.md)

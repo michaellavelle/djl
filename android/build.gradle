@@ -1,0 +1,26 @@
+buildscript {
+
+    repositories {
+        google()
+        jcenter()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:3.6.3'
+    }
+}
+
+allprojects {
+    group 'ai.djl.android'
+    boolean isRelease = project.hasProperty("release") || project.hasProperty("staging")
+    version = "0.7.0" + (isRelease ? "" : "-SNAPSHOT")
+
+    repositories {
+        google()
+        jcenter()
+    }
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}

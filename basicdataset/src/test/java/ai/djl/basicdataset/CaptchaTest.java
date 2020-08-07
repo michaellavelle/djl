@@ -19,8 +19,8 @@ import ai.djl.training.Trainer;
 import ai.djl.training.TrainingConfig;
 import ai.djl.training.dataset.Batch;
 import ai.djl.training.dataset.Dataset;
-import ai.djl.training.initializer.Initializer;
 import ai.djl.training.loss.Loss;
+import ai.djl.translate.TranslateException;
 import java.io.IOException;
 import org.testng.Assert;
 import org.testng.annotations.Test;
@@ -28,12 +28,10 @@ import org.testng.annotations.Test;
 public class CaptchaTest {
 
     @Test
-    public void testCaptcha() throws IOException {
-        TrainingConfig config =
-                new DefaultTrainingConfig(Loss.softmaxCrossEntropyLoss())
-                        .optInitializer(Initializer.ONES);
+    public void testCaptcha() throws IOException, TranslateException {
+        TrainingConfig config = new DefaultTrainingConfig(Loss.softmaxCrossEntropyLoss());
 
-        try (Model model = Model.newInstance()) {
+        try (Model model = Model.newInstance("captcha")) {
             model.setBlock(Blocks.identityBlock());
 
             CaptchaDataset captchaDataset =
@@ -42,7 +40,6 @@ public class CaptchaTest {
                             .setSampling(32, true)
                             .build();
 
-            captchaDataset.prepare();
             try (Trainer trainer = model.newTrainer(config)) {
                 for (Batch batch : trainer.iterateDataset(captchaDataset)) {
                     Assert.assertEquals(batch.getData().size(), 1);

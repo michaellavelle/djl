@@ -24,7 +24,7 @@ public class MockEngine extends Engine {
 
     /** {@inheritDoc} */
     @Override
-    public Model newModel(Device device) {
+    public Model newModel(String name, Device device) {
         return new MockModel();
     }
 
@@ -58,6 +58,7 @@ public class MockEngine extends Engine {
         return new MockNDManager();
     }
 
+    /** {@inheritDoc} */
     @Override
     public GradientCollector newGradientCollector() {
         return null;

@@ -22,6 +22,7 @@ import ai.djl.nn.Blocks;
 import ai.djl.nn.core.Linear;
 import ai.djl.testing.Assertions;
 import ai.djl.training.DefaultTrainingConfig;
+import ai.djl.training.EasyTrain;
 import ai.djl.training.GradientCollector;
 import ai.djl.training.Trainer;
 import ai.djl.training.TrainingConfig;
@@ -31,7 +32,9 @@ import ai.djl.training.initializer.Initializer;
 import ai.djl.training.listener.EvaluatorTrainingListener;
 import ai.djl.training.loss.Loss;
 import ai.djl.training.optimizer.Optimizer;
-import ai.djl.training.optimizer.learningrate.LearningRateTracker;
+import ai.djl.training.tracker.Tracker;
+import ai.djl.translate.TranslateException;
+import java.io.IOException;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 
@@ -39,7 +42,7 @@ public class GradientCollectorIntegrationTest {
 
     @Test
     public void testAutograd() {
-        try (Model model = Model.newInstance();
+        try (Model model = Model.newInstance("model");
                 NDManager manager = model.getNDManager()) {
             model.setBlock(Blocks.identityBlock());
             try (Trainer trainer =
@@ -69,15 +72,12 @@ public class GradientCollectorIntegrationTest {
     }
 
     @Test
-    public void testTrain() {
+    public void testTrain() throws IOException, TranslateException {
         int numOfData = 1000;
         int batchSize = 10;
         int epochs = 10;
 
-        Optimizer optimizer =
-                Optimizer.sgd()
-                        .setLearningRateTracker(LearningRateTracker.fixedLearningRate(.03f))
-                        .build();
+        Optimizer optimizer = Optimizer.sgd().setLearningRateTracker(Tracker.fixed(.03f)).build();
 
         TrainingConfig config =
                 new DefaultTrainingConfig(Loss.l2Loss())
@@ -85,8 +85,8 @@ public class GradientCollectorIntegrationTest {
                         .optInitializer(Initializer.ONES)
                         .optOptimizer(optimizer);
 
-        try (Model model = Model.newInstance()) {
-            Linear block = Linear.builder().setOutChannels(1).build();
+        try (Model model = Model.newInstance("linear")) {
+            Linear block = Linear.builder().setUnits(1).build();
             model.setBlock(block);
 
             NDManager manager = model.getNDManager();
@@ -114,9 +114,9 @@ public class GradientCollectorIntegrationTest {
                 trainer.initialize(inputShape);
 
                 for (int epoch = 0; epoch < epochs; epoch++) {
-                    trainer.endEpoch();
+                    trainer.notifyListeners(listener -> listener.onEpoch(trainer));
                     for (Batch batch : trainer.iterateDataset(dataset)) {
-                        trainer.trainBatch(batch);
+                        EasyTrain.trainBatch(trainer, batch);
                         trainer.step();
                         batch.close();
                     }

@@ -36,6 +36,8 @@ import java.util.zip.ZipInputStream;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The {@code AbstractRepository} is the shared base for implementers of the {@link Repository}
@@ -44,6 +46,8 @@ import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
  * @see Repository
  */
 public abstract class AbstractRepository implements Repository {
+
+    private static final Logger logger = LoggerFactory.getLogger(AbstractRepository.class);
 
     /** {@inheritDoc} */
     @Override
@@ -97,7 +101,7 @@ public abstract class AbstractRepository implements Repository {
     public void prepare(Artifact artifact, Progress progress) throws IOException {
         Path resourceDir = getResourceDirectory(artifact);
         if (Files.exists(resourceDir)) {
-            // files have been downloaded already.
+            logger.debug("Files have been downloaded already: {}", resourceDir);
             return;
         }
 
@@ -121,10 +125,11 @@ public abstract class AbstractRepository implements Repository {
         }
 
         try {
+            logger.debug("Items to download: {}", files.size());
             for (Artifact.Item item : files.values()) {
                 download(tmp, baseUri, item, progress);
             }
-            Files.move(tmp, resourceDir, StandardCopyOption.ATOMIC_MOVE);
+            Utils.moveQuietly(tmp, resourceDir);
         } finally {
             Utils.deleteQuietly(tmp);
             if (progress != null) {
@@ -167,6 +172,7 @@ public abstract class AbstractRepository implements Repository {
             fileUri = getBaseUri().resolve(baseUri).resolve(fileUri);
         }
 
+        logger.debug("Downloading artifact: {} ...", fileUri);
         try (InputStream is = fileUri.toURL().openStream()) {
             save(is, tmp, baseUri, item, progress);
         }
@@ -201,11 +207,11 @@ public abstract class AbstractRepository implements Repository {
             if ("zip".equals(extension)) {
                 ZipInputStream zis = new ZipInputStream(pis);
                 zis.getNextEntry();
-                Files.copy(zis, file);
+                Files.copy(zis, file, StandardCopyOption.REPLACE_EXISTING);
             } else if ("gzip".equals(extension)) {
-                Files.copy(new GZIPInputStream(pis), file);
+                Files.copy(new GZIPInputStream(pis), file, StandardCopyOption.REPLACE_EXISTING);
             } else {
-                Files.copy(pis, file);
+                Files.copy(pis, file, StandardCopyOption.REPLACE_EXISTING);
             }
         }
         pis.validateChecksum(item);
@@ -231,7 +237,7 @@ public abstract class AbstractRepository implements Repository {
                                 "Parent path should never be null: " + file.toString());
                     }
                     Files.createDirectories(parentFile);
-                    Files.copy(tis, file);
+                    Files.copy(tis, file, StandardCopyOption.REPLACE_EXISTING);
                 }
             }
         }

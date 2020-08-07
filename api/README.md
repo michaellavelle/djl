@@ -4,7 +4,7 @@
 
 This module contains the core API of the Deep Java Library (DJL) project. It includes the following packages:
 
-- engine - Contains classes to load a deep learning framework
+- engine - Contains classes to load a deep learning engine
 - inference - Contains classes to implement inference tasks
 - metric - Contains classes to collect metrics information
 - modality - Contains utility classes for each of the predefined modalities
@@ -15,12 +15,16 @@ This module contains the core API of the Deep Java Library (DJL) project. It inc
 
 ## Documentation
 
-The latest javadocs can be found on the [djl.ai website](https://javadoc.djl.ai/api/0.4.0/index.html).
+The latest javadocs can be found on the [djl.ai website](https://javadoc.io/doc/ai.djl/api/latest/index.html).
 
 You can also build the latest javadocs locally using the following command:
 
 ```sh
+# for Linux/macOS:
 ./gradlew javadoc
+
+# for Windows:
+..\gradlew javadoc
 ```
 The javadocs output is built in the build/doc/javadoc folder.
 
@@ -31,6 +35,19 @@ You can pull the DJL API from the central Maven repository by including the foll
 <dependency>
     <groupId>ai.djl</groupId>
     <artifactId>api</artifactId>
-    <version>0.4.0</version>
+    <version>0.6.0</version>
 </dependency>
 ```
+
+For testing the current nightly build, use the following: 
+
+```xml
+<dependency>
+    <groupId>ai.djl</groupId>
+    <artifactId>api</artifactId>
+    <version>0.7.0-SNAPSHOT</version>
+</dependency>
+```
+
+Note that the nightly build is under active development and might contain a number of bugs and 
+instabilities. 

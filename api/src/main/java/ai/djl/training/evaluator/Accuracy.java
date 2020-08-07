@@ -53,9 +53,6 @@ public class Accuracy extends AbstractAccuracy {
     /** {@inheritDoc} */
     @Override
     protected Pair<Long, NDArray> accuracyHelper(NDList labels, NDList predictions) {
-        if (labels.size() != predictions.size()) {
-            throw new IllegalArgumentException("labels and prediction length does not match.");
-        }
         NDArray label = labels.get(index);
         NDArray prediction = predictions.get(index);
         checkLabelShapes(label, prediction);
@@ -69,10 +66,9 @@ public class Accuracy extends AbstractAccuracy {
         }
         // result of sum is int64 now
         long total = label.size();
-        NDArray correct =
-                label.toType(DataType.INT64, false)
-                        .eq(predictionReduced.toType(DataType.INT64, false))
-                        .countNonzero();
-        return new Pair<>(total, correct);
+        try (NDArray nd = label.toType(DataType.INT64, true)) {
+            NDArray correct = predictionReduced.toType(DataType.INT64, false).eq(nd).countNonzero();
+            return new Pair<>(total, correct);
+        }
     }
 }

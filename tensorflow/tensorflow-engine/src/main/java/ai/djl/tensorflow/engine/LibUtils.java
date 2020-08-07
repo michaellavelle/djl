@@ -13,7 +13,6 @@
 
 package ai.djl.tensorflow.engine;
 
-import ai.djl.engine.EngineException;
 import ai.djl.util.Platform;
 import ai.djl.util.Utils;
 import java.io.File;
@@ -60,6 +59,7 @@ public final class LibUtils {
                         .getResource("native/lib/tensorflow.properties");
         if (url == null) {
             // defer to tensorflow-core-api to handle loading native library.
+            logger.debug("tensorflow.properties not found in class path.");
             return null;
         }
 
@@ -87,17 +87,17 @@ public final class LibUtils {
             flavor = "cpu";
         }
 
-        Path userHome = Paths.get(System.getProperty("user.home"));
         String libName = System.mapLibraryName(LIB_NAME);
-        Path dir =
-                userHome.resolve(".tensorflow/cache/" + version + '-' + flavor + '-' + classifier);
+        Path cacheDir = getCacheDir();
+        logger.debug("Using cache dir: {}", cacheDir);
+        Path dir = cacheDir.resolve(version + '-' + flavor + '-' + classifier);
         Path path = dir.resolve(libName);
         if (Files.exists(path)) {
             return path.toAbsolutePath().toString();
         }
 
-        Path tmp = userHome.resolve(".tensorflow/cache/tmp");
-        Files.createDirectories(tmp);
+        Files.createDirectories(cacheDir);
+        Path tmp = Files.createTempDirectory(cacheDir, "tmp");
 
         Matcher matcher = VERSION_PATTERN.matcher(version);
         if (!matcher.matches()) {
@@ -110,9 +110,7 @@ public final class LibUtils {
             if (!found && cudaArch != null) {
                 // fallback to cpu
                 flavor = "cpu";
-                dir =
-                        userHome.resolve(
-                                ".tensorflow/cache/" + version + '-' + flavor + '-' + classifier);
+                dir = cacheDir.resolve(version + '-' + flavor + '-' + classifier);
                 path = dir.resolve(libName);
                 if (Files.exists(path)) {
                     logger.warn(
@@ -126,13 +124,11 @@ public final class LibUtils {
             }
 
             if (!found) {
-                throw new EngineException(
+                throw new UnsupportedOperationException(
                         "TensorFlow engine does not support this platform: " + os);
             }
 
-            Utils.deleteQuietly(dir);
-            Files.move(tmp, dir);
-            tmp = null;
+            Utils.moveQuietly(tmp, dir);
             return path.toAbsolutePath().toString();
         } finally {
             if (tmp != null) {
@@ -150,11 +146,31 @@ public final class LibUtils {
                 found = true;
                 URL url = new URL(link + '/' + line.replace("+", "%2B"));
                 String fileName = line.substring(line.lastIndexOf('/') + 1, line.length() - 3);
+                logger.info("Downloading {} ...", fileName);
                 try (InputStream fis = new GZIPInputStream(url.openStream())) {
                     Files.copy(fis, tmp.resolve(fileName), StandardCopyOption.REPLACE_EXISTING);
                 }
             }
         }
         return found;
+    }
+
+    private static Path getCacheDir() {
+        String cacheDir = System.getProperty("ENGINE_CACHE_DIR");
+        if (cacheDir == null || cacheDir.isEmpty()) {
+            cacheDir = System.getenv("ENGINE_CACHE_DIR");
+            if (cacheDir == null || cacheDir.isEmpty()) {
+                cacheDir = System.getProperty("DJL_CACHE_DIR");
+                if (cacheDir == null || cacheDir.isEmpty()) {
+                    cacheDir = System.getenv("DJL_CACHE_DIR");
+                    if (cacheDir == null || cacheDir.isEmpty()) {
+                        String userHome = System.getProperty("user.home");
+                        return Paths.get(userHome, ".tensorflow/cache");
+                    }
+                }
+                return Paths.get(cacheDir, "tensorflow");
+            }
+        }
+        return Paths.get(cacheDir, ".tensorflow/cache");
     }
 }

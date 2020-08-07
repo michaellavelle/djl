@@ -13,15 +13,16 @@
 package ai.djl.mxnet.zoo.nlp.qa;
 
 import ai.djl.Model;
+import ai.djl.modality.nlp.Vocabulary;
 import ai.djl.modality.nlp.bert.BertToken;
 import ai.djl.modality.nlp.bert.BertTokenizer;
-import ai.djl.modality.nlp.bert.BertVocabulary;
 import ai.djl.modality.nlp.qa.QAInput;
 import ai.djl.modality.nlp.translator.QATranslator;
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.NDManager;
 import ai.djl.ndarray.types.Shape;
+import ai.djl.translate.Batchifier;
 import ai.djl.translate.TranslatorContext;
 import ai.djl.util.Utils;
 import java.io.IOException;
@@ -34,12 +35,14 @@ import java.util.stream.Collectors;
  * @see BertQAModelLoader
  */
 public class MxBertQATranslator extends QATranslator {
+
     private List<String> tokens;
-    private BertVocabulary vocabulary;
+    private Vocabulary vocabulary;
     private BertTokenizer tokenizer;
     private int seqLength;
 
     MxBertQATranslator(Builder builder) {
+        super(builder);
         seqLength = builder.seqLength;
     }
 
@@ -48,6 +51,13 @@ public class MxBertQATranslator extends QATranslator {
     public void prepare(NDManager manager, Model model) throws IOException {
         vocabulary = model.getArtifact("vocab.json", MxBertVocabulary::parse);
         tokenizer = new BertTokenizer();
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public Batchifier getBatchifier() {
+        // MXNet BertQA model doesn't support batch
+        return null;
     }
 
     /** {@inheritDoc} */
@@ -66,10 +76,12 @@ public class MxBertQATranslator extends QATranslator {
         int validLength = token.getValidLength();
 
         NDManager manager = ctx.getNDManager();
-        NDArray data0 = manager.create(indexesFloat, new Shape(1, seqLength));
+        NDArray data0 = manager.create(indexesFloat);
         data0.setName("data0");
-        NDArray data1 = manager.create(types, new Shape(1, seqLength));
+        NDArray data1 = manager.create(types);
         data1.setName("data1");
+        // avoid to use scalar as MXNet Bert model was trained with 1.5.0
+        // which is not compatible with MXNet NumPy
         NDArray data2 = manager.create(new float[] {validLength});
         data2.setName("data2");
 

@@ -14,7 +14,7 @@ package ai.djl.repository.zoo;
 
 import ai.djl.Application;
 import ai.djl.Device;
-import ai.djl.engine.Engine;
+import ai.djl.nn.Block;
 import ai.djl.translate.Translator;
 import ai.djl.util.Progress;
 import java.util.HashMap;
@@ -35,10 +35,13 @@ public class Criteria<I, O> {
     private Device device;
     private String groupId;
     private String artifactId;
+    private ModelZoo modelZoo;
     private Map<String, String> filters;
     private Map<String, Object> arguments;
     private Map<String, Object> options;
     private Translator<I, O> translator;
+    private Block block;
+    private String modelName;
     private Progress progress;
 
     Criteria(Builder<I, O> builder) {
@@ -49,10 +52,13 @@ public class Criteria<I, O> {
         this.device = builder.device;
         this.groupId = builder.groupId;
         this.artifactId = builder.artifactId;
+        this.modelZoo = builder.modelZoo;
         this.filters = builder.filters;
         this.arguments = builder.arguments;
         this.options = builder.options;
         this.translator = builder.translator;
+        this.block = builder.block;
+        this.modelName = builder.modelName;
         this.progress = builder.progress;
     }
 
@@ -120,6 +126,15 @@ public class Criteria<I, O> {
     }
 
     /**
+     * Returns the {@link ModelZoo} to be searched.
+     *
+     * @return the {@link ModelZoo} to be searched
+     */
+    public ModelZoo getModelZoo() {
+        return modelZoo;
+    }
+
+    /**
      * Returns the search filters that must match the properties of the model.
      *
      * @return the search filters that must match the properties of the model.
@@ -156,6 +171,24 @@ public class Criteria<I, O> {
     }
 
     /**
+     * Returns the optional {@link Block} to be used for {@link ZooModel}.
+     *
+     * @return the optional {@link Block} to be used for {@link ZooModel}
+     */
+    public Block getBlock() {
+        return block;
+    }
+
+    /**
+     * Returns the optional model name to be used for {@link ZooModel}.
+     *
+     * @return the optional model name to be used for {@link ZooModel}
+     */
+    public String getModelName() {
+        return modelName;
+    }
+
+    /**
      * Returns the optional {@link Progress} for the model loading.
      *
      * @return the optional {@link Progress} for the model loading
@@ -183,15 +216,16 @@ public class Criteria<I, O> {
         Device device;
         String groupId;
         String artifactId;
+        ModelZoo modelZoo;
         Map<String, String> filters;
         Map<String, Object> arguments;
         Map<String, Object> options;
         Translator<I, O> translator;
+        Block block;
+        String modelName;
         Progress progress;
 
-        Builder() {
-            engine = Engine.getInstance().getEngineName();
-        }
+        Builder() {}
 
         private Builder(Class<I> inputClass, Class<O> outputClass, Builder<?, ?> parent) {
             this.inputClass = inputClass;
@@ -203,6 +237,8 @@ public class Criteria<I, O> {
             filters = parent.filters;
             arguments = parent.arguments;
             options = parent.options;
+            block = parent.block;
+            modelName = parent.modelName;
             progress = parent.progress;
         }
 
@@ -281,6 +317,28 @@ public class Criteria<I, O> {
         }
 
         /**
+         * Sets optional model urls of the {@link ModelLoader} for this criteria.
+         *
+         * @param modelUrls the comma delimited url string
+         * @return this {@code Builder}
+         */
+        public Builder<I, O> optModelUrls(String modelUrls) {
+            this.modelZoo = new DefaultModelZoo(modelUrls);
+            return this;
+        }
+
+        /**
+         * Sets optional {@link ModelZoo} of the {@link ModelLoader} for this criteria.
+         *
+         * @param modelZoo ModelZoo} of the {@link ModelLoader} for this criteria
+         * @return this {@code Builder}
+         */
+        public Builder<I, O> optModelZoo(ModelZoo modelZoo) {
+            this.modelZoo = modelZoo;
+            return this;
+        }
+
+        /**
          * Sets the extra search filters for this criteria.
          *
          * @param filters the extra search filters
@@ -303,6 +361,28 @@ public class Criteria<I, O> {
                 filters = new HashMap<>();
             }
             filters.put(key, value);
+            return this;
+        }
+
+        /**
+         * Sets an optional model {@link Block} for this criteria.
+         *
+         * @param block optional model {@link Block} for this criteria
+         * @return this {@code Builder}
+         */
+        public Builder<I, O> optBlock(Block block) {
+            this.block = block;
+            return this;
+        }
+
+        /**
+         * Sets an optional model name for this criteria.
+         *
+         * @param modelName optional model name for this criteria
+         * @return this {@code Builder}
+         */
+        public Builder<I, O> optModelName(String modelName) {
+            this.modelName = modelName;
             return this;
         }
 

@@ -13,15 +13,14 @@
 package ai.djl.pytorch.zoo.nlp.qa;
 
 import ai.djl.Model;
+import ai.djl.modality.nlp.Vocabulary;
 import ai.djl.modality.nlp.bert.BertToken;
 import ai.djl.modality.nlp.bert.BertTokenizer;
-import ai.djl.modality.nlp.bert.BertVocabulary;
 import ai.djl.modality.nlp.qa.QAInput;
 import ai.djl.modality.nlp.translator.QATranslator;
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.NDManager;
-import ai.djl.ndarray.types.Shape;
 import ai.djl.translate.TranslatorContext;
 import java.io.IOException;
 import java.util.List;
@@ -34,10 +33,12 @@ import java.util.List;
 public class PtBertQATranslator extends QATranslator {
 
     private List<String> tokens;
-    private BertVocabulary vocabulary;
+    private Vocabulary vocabulary;
     private BertTokenizer tokenizer;
 
-    PtBertQATranslator() {}
+    PtBertQATranslator(Builder builder) {
+        super(builder);
+    }
 
     /** {@inheritDoc} */
     @Override
@@ -57,10 +58,9 @@ public class PtBertQATranslator extends QATranslator {
         long[] indices = tokens.stream().mapToLong(vocabulary::getIndex).toArray();
         long[] attentionMask = token.getAttentionMask().stream().mapToLong(i -> i).toArray();
         long[] tokenType = token.getTokenTypes().stream().mapToLong(i -> i).toArray();
-        NDArray indicesArray = manager.create(indices, new Shape(1, indices.length));
-        NDArray attentionMaskArray =
-                manager.create(attentionMask, new Shape(1, attentionMask.length));
-        NDArray tokenTypeArray = manager.create(tokenType, new Shape(1, tokenType.length));
+        NDArray indicesArray = manager.create(indices);
+        NDArray attentionMaskArray = manager.create(attentionMask);
+        NDArray tokenTypeArray = manager.create(tokenType);
         return new NDList(indicesArray, attentionMaskArray, tokenTypeArray);
     }
 
@@ -72,6 +72,15 @@ public class PtBertQATranslator extends QATranslator {
         int startIdx = (int) startLogits.argMax().getLong();
         int endIdx = (int) endLogits.argMax().getLong();
         return tokens.subList(startIdx, endIdx + 1).toString();
+    }
+
+    /**
+     * Creates a builder to build a {@code PtBertQATranslator}.
+     *
+     * @return a new builder
+     */
+    public static PtBertQATranslator.Builder builder() {
+        return new PtBertQATranslator.Builder();
     }
 
     /** The builder for Bert QA translator. */
@@ -93,7 +102,7 @@ public class PtBertQATranslator extends QATranslator {
          * @return the new translator
          */
         protected PtBertQATranslator build() {
-            return new PtBertQATranslator();
+            return new PtBertQATranslator(this);
         }
     }
 }

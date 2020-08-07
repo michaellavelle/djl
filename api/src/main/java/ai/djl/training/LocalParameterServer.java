@@ -16,14 +16,11 @@ import ai.djl.Device;
 import ai.djl.ndarray.NDArray;
 import ai.djl.training.optimizer.Optimizer;
 import java.util.Arrays;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /** {@code LocalParameterServer} is an implementation of the {@code ParameterServer} interface. */
 public class LocalParameterServer implements ParameterServer {
 
     private Optimizer optimizer;
-    private Map<String, NDArray[]> gradMap;
 
     /**
      * Create a new instance of {@code LocalParameterServer} for the given optimizer.
@@ -32,7 +29,6 @@ public class LocalParameterServer implements ParameterServer {
      */
     public LocalParameterServer(Optimizer optimizer) {
         this.optimizer = optimizer;
-        gradMap = new ConcurrentHashMap<>();
     }
 
     /** {@inheritDoc} */
@@ -41,18 +37,8 @@ public class LocalParameterServer implements ParameterServer {
 
     /** {@inheritDoc} */
     @Override
-    public void push(String parameterId, NDArray[] grads, int priority) {
-        NDArray[] oldGrads = gradMap.put(parameterId, grads);
-        if (oldGrads != null) {
-            Arrays.stream(oldGrads).forEach(NDArray::close);
-        }
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public void pull(String parameterId, NDArray[] weights, int priority) {
-        NDArray[] grads = gradMap.get(parameterId);
-        Device firstDevice = grads[0].getDevice();
+    public void update(String parameterId, NDArray[] grads, NDArray[] params) {
+        Device firstDevice = params[0].getDevice();
         // reduce gradient from all devices to first device
         for (int i = 1; i < grads.length; i++) {
             try (NDArray gradCopy = grads[i].toDevice(firstDevice, true)) {
@@ -60,12 +46,17 @@ public class LocalParameterServer implements ParameterServer {
             }
         }
         // update weights on different devices with reduced gradient
-        for (NDArray weight : weights) {
-            if (weight.getDevice().equals(firstDevice)) {
-                optimizer.update(parameterId, weight, grads[0]);
-            } else {
-                try (NDArray gradSumCopy = grads[0].toDevice(weight.getDevice(), true)) {
-                    optimizer.update(parameterId, weight, gradSumCopy);
+        // use duplicate because after the first optimizer.update
+        // PyTorch optimizer will zero grads[0]
+        // the second copy is to move the grads[0] to the device the weight is on
+        try (NDArray aggregatedGrad = grads[0].duplicate()) {
+            for (NDArray param : params) {
+                if (param.getDevice().equals(firstDevice)) {
+                    optimizer.update(parameterId, param, aggregatedGrad);
+                } else {
+                    try (NDArray gradSumCopy = aggregatedGrad.toDevice(param.getDevice(), true)) {
+                        optimizer.update(parameterId, param, gradSumCopy);
+                    }
                 }
             }
         }

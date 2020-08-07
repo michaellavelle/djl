@@ -23,8 +23,10 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.Collections;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -57,11 +59,18 @@ public final class LibUtils {
     private LibUtils() {}
 
     public static void loadLibrary() {
+        // TODO workaround to make it work on Android Studio
+        // It should search for several places to find the native library
+        if (System.getProperty("java.vendor.url").equals("http://www.android.com/")) {
+            System.loadLibrary(LIB_NAME); // NOPMD
+            return;
+        }
         String libName = findOverrideLibrary();
         if (libName == null) {
-            String nativeLibDir = findNativeLibrary();
+            AtomicBoolean fallback = new AtomicBoolean(false);
+            String nativeLibDir = findNativeLibrary(fallback);
             if (nativeLibDir != null) {
-                libName = copyJniLibraryFromClasspath(Paths.get(nativeLibDir));
+                libName = copyJniLibraryFromClasspath(Paths.get(nativeLibDir), fallback.get());
             } else {
                 throw new IllegalStateException("Native library not found");
             }
@@ -84,14 +93,20 @@ public final class LibUtils {
                                 String name = path.getFileName().toString();
                                 return !"c10_cuda.dll".equals(name)
                                         && !"torch.dll".equals(name)
+                                        && !"torch_cpu.dll".equals(name)
+                                        && !"torch_cuda.dll".equals(name)
+                                        && !"fbgemm.dll".equals(name)
                                         && Files.isRegularFile(path)
                                         && !name.endsWith("djl_torch.dll");
                             })
                     .map(path -> path.toAbsolutePath().toString())
                     .forEach(System::load);
+            System.load(libDir.resolve("fbgemm.dll").toAbsolutePath().toString());
+            System.load(libDir.resolve("torch_cpu.dll").toAbsolutePath().toString());
             if (Files.exists(libDir.resolve("c10_cuda.dll"))) {
                 // Windows System.load is global load
                 System.load(libDir.resolve("c10_cuda.dll").toAbsolutePath().toString());
+                System.load(libDir.resolve("torch_cuda.dll").toAbsolutePath().toString());
             }
             System.load(libDir.resolve("torch.dll").toAbsolutePath().toString());
         } catch (IOException e) {
@@ -139,12 +154,12 @@ public final class LibUtils {
         return null;
     }
 
-    private static String copyJniLibraryFromClasspath(Path nativeDir) {
+    private static String copyJniLibraryFromClasspath(Path nativeDir, boolean fallback) {
         String name = System.mapLibraryName(LIB_NAME);
         Platform platform = Platform.fromSystem();
         String classifier = platform.getClassifier();
         String flavor = platform.getFlavor();
-        if (flavor.isEmpty()) {
+        if (fallback || flavor.isEmpty()) {
             flavor = "cpu";
         }
         Properties prop = new Properties();
@@ -160,29 +175,37 @@ public final class LibUtils {
         if (Files.exists(path)) {
             return path.toAbsolutePath().toString();
         }
+
+        Path tmp = null;
         try (InputStream stream =
                 LibUtils.class.getResourceAsStream(
                         "/jnilib/" + classifier + "/" + flavor + "/" + name)) {
-            Files.copy(stream, path, StandardCopyOption.REPLACE_EXISTING);
+            tmp = Files.createTempFile(nativeDir, "jni", "tmp");
+            Files.copy(stream, tmp, StandardCopyOption.REPLACE_EXISTING);
+            Utils.moveQuietly(tmp, path);
             return path.toAbsolutePath().toString();
         } catch (IOException e) {
             throw new IllegalStateException("Cannot copy jni files", e);
+        } finally {
+            if (tmp != null) {
+                Utils.deleteQuietly(tmp);
+            }
         }
     }
 
-    private static synchronized String findNativeLibrary() {
-        List<URL> urls;
+    private static synchronized String findNativeLibrary(AtomicBoolean fallback) {
+        Enumeration<URL> urls;
         try {
             urls =
-                    Collections.list(
-                            Thread.currentThread()
-                                    .getContextClassLoader()
-                                    .getResources("native/lib/pytorch.properties"));
+                    Thread.currentThread()
+                            .getContextClassLoader()
+                            .getResources("native/lib/pytorch.properties");
         } catch (IOException e) {
+            logger.warn("", e);
             return null;
         }
         // No native jars
-        if (urls.isEmpty()) {
+        if (!urls.hasMoreElements()) {
             return null;
         }
 
@@ -190,7 +213,8 @@ public final class LibUtils {
         try {
             Platform matching = null;
             Platform placeholder = null;
-            for (URL url : urls) {
+            while (urls.hasMoreElements()) {
+                URL url = urls.nextElement();
                 Platform platform = Platform.fromUrl(url);
                 if (platform.isPlaceholder()) {
                     placeholder = platform;
@@ -206,7 +230,7 @@ public final class LibUtils {
 
             if (placeholder != null) {
                 try {
-                    return downloadPyTorch(placeholder);
+                    return downloadPyTorch(placeholder, fallback);
                 } catch (IOException e) {
                     throw new IllegalStateException("Failed to download PyTorch native library", e);
                 }
@@ -225,15 +249,17 @@ public final class LibUtils {
         String flavor = platform.getFlavor();
         String classifier = platform.getClassifier();
         try {
-            String userHome = System.getProperty("user.home");
             String libName = System.mapLibraryName(NATIVE_LIB_NAME);
-            Path dir = Paths.get(userHome, ".pytorch/cache/" + version + flavor + '-' + classifier);
+            Path cacheDir = getCacheDir();
+            logger.debug("Using cache dir: {}", cacheDir);
+            Path dir = cacheDir.resolve(version + flavor + '-' + classifier);
             Path path = dir.resolve(libName);
             if (Files.exists(path)) {
                 return dir.toAbsolutePath().toString();
             }
-            tmp = Paths.get(userHome, ".pytorch/cache/tmp");
-            Files.createDirectories(tmp);
+
+            Files.createDirectories(cacheDir);
+            tmp = Files.createTempDirectory(cacheDir, "tmp");
             for (String file : platform.getLibraries()) {
                 String libPath = "/native/lib/" + file;
                 try (InputStream is = LibUtils.class.getResourceAsStream(libPath)) {
@@ -241,9 +267,7 @@ public final class LibUtils {
                 }
             }
 
-            Utils.deleteQuietly(dir);
-            Files.move(tmp, dir);
-            tmp = null;
+            Utils.moveQuietly(tmp, dir);
             return dir.toAbsolutePath().toString();
         } catch (IOException e) {
             throw new IllegalStateException("Failed to extract PyTorch native library", e);
@@ -254,7 +278,8 @@ public final class LibUtils {
         }
     }
 
-    private static String downloadPyTorch(Platform platform) throws IOException {
+    private static String downloadPyTorch(Platform platform, AtomicBoolean fallback)
+            throws IOException {
         String version = platform.getVersion();
         String flavor = platform.getFlavor();
         if (flavor.isEmpty()) {
@@ -263,41 +288,77 @@ public final class LibUtils {
         String classifier = platform.getClassifier();
         String os = platform.getOsPrefix();
 
-        String userHome = System.getProperty("user.home");
         String libName = System.mapLibraryName(NATIVE_LIB_NAME);
-        Path dir = Paths.get(userHome, ".pytorch/cache/" + version + flavor + '-' + classifier);
+        Path cacheDir = getCacheDir();
+        logger.debug("Using cache dir: {}", cacheDir);
+        Path dir = cacheDir.resolve(version + flavor + '-' + classifier);
         Path path = dir.resolve(libName);
         if (Files.exists(path)) {
             return dir.toAbsolutePath().toString();
         }
         // if files not found
-        Path tmp = Paths.get(userHome, ".pytorch/cache/tmp");
-        Files.createDirectories(tmp);
+        Files.createDirectories(cacheDir);
 
         Matcher matcher = VERSION_PATTERN.matcher(version);
         if (!matcher.matches()) {
             throw new IllegalArgumentException("Unexpected version: " + version);
         }
         String link = "https://djl-ai.s3.amazonaws.com/publish/pytorch-" + matcher.group(1);
+        Path tmp = null;
         try (InputStream is = new URL(link + "/files.txt").openStream()) {
             List<String> lines = Utils.readLines(is);
+            if (flavor.startsWith("cu")
+                    && !lines.contains(flavor + '/' + os + "/native/lib/libtorch.so.gz")) {
+                logger.warn("No matching cuda flavor for {} found: {}.", os, flavor);
+                // fallback to CPU
+                flavor = "cpu";
+                fallback.set(true);
+
+                // check again
+                dir = cacheDir.resolve(version + flavor + '-' + classifier);
+                path = dir.resolve(libName);
+                if (Files.exists(path)) {
+                    return dir.toAbsolutePath().toString();
+                }
+            }
+
+            tmp = Files.createTempDirectory(cacheDir, "tmp");
             for (String line : lines) {
                 if (line.startsWith(flavor + '/' + os + '/')) {
                     URL url = new URL(link + '/' + line);
                     String fileName = line.substring(line.lastIndexOf('/') + 1, line.length() - 3);
+                    logger.info("Downloading {} ...", fileName);
                     try (InputStream fis = new GZIPInputStream(url.openStream())) {
                         Files.copy(fis, tmp.resolve(fileName), StandardCopyOption.REPLACE_EXISTING);
                     }
                 }
             }
-            Utils.deleteQuietly(dir);
-            Files.move(tmp, dir);
-            tmp = null;
+
+            Utils.moveQuietly(tmp, dir);
             return dir.toAbsolutePath().toString();
         } finally {
             if (tmp != null) {
                 Utils.deleteQuietly(tmp);
             }
         }
+    }
+
+    private static Path getCacheDir() {
+        String cacheDir = System.getProperty("ENGINE_CACHE_DIR");
+        if (cacheDir == null || cacheDir.isEmpty()) {
+            cacheDir = System.getenv("ENGINE_CACHE_DIR");
+            if (cacheDir == null || cacheDir.isEmpty()) {
+                cacheDir = System.getProperty("DJL_CACHE_DIR");
+                if (cacheDir == null || cacheDir.isEmpty()) {
+                    cacheDir = System.getenv("DJL_CACHE_DIR");
+                    if (cacheDir == null || cacheDir.isEmpty()) {
+                        String userHome = System.getProperty("user.home");
+                        return Paths.get(userHome, ".pytorch/cache");
+                    }
+                }
+                return Paths.get(cacheDir, "pytorch");
+            }
+        }
+        return Paths.get(cacheDir, ".pytorch/cache");
     }
 }

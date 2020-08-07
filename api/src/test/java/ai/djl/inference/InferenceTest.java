@@ -16,6 +16,8 @@ import ai.djl.Model;
 import ai.djl.ModelException;
 import ai.djl.metric.Metrics;
 import ai.djl.modality.Classifications;
+import ai.djl.modality.cv.Image;
+import ai.djl.modality.cv.ImageFactory;
 import ai.djl.modality.cv.output.DetectedObjects;
 import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.types.DataType;
@@ -25,6 +27,7 @@ import ai.djl.test.mock.EchoTranslator;
 import ai.djl.test.mock.MockImageTranslator;
 import ai.djl.test.mock.MockModel;
 import ai.djl.test.mock.MockNDArray;
+import ai.djl.translate.Batchifier;
 import ai.djl.translate.TranslateException;
 import ai.djl.translate.Translator;
 import ai.djl.translate.TranslatorContext;
@@ -40,12 +43,14 @@ import org.testng.annotations.Test;
 
 public class InferenceTest {
 
-    private BufferedImage image;
+    private Image image;
 
     @BeforeClass
     public void setup() throws IOException {
         Files.createDirectories(Paths.get("build/model"));
-        image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB);
+        image =
+                ImageFactory.getInstance()
+                        .fromImage(new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB));
     }
 
     @Test
@@ -53,12 +58,12 @@ public class InferenceTest {
         Path modelDir = Paths.get("build/model");
         String modelName = "mockModel";
 
-        Model model = Model.newInstance();
-        model.load(modelDir, modelName);
+        Model model = Model.newInstance(modelName);
+        model.load(modelDir);
         MockImageTranslator translator = new MockImageTranslator("cat");
 
         Metrics metrics = new Metrics();
-        try (Predictor<BufferedImage, DetectedObjects> ssd = model.newPredictor(translator)) {
+        try (Predictor<Image, DetectedObjects> ssd = model.newPredictor(translator)) {
             ssd.setMetrics(metrics);
             DetectedObjects result = ssd.predict(image);
 
@@ -72,7 +77,7 @@ public class InferenceTest {
     @Test
     public void testClassifier() throws IOException, TranslateException, ModelException {
         Path modelDir = Paths.get("build/model");
-        Model model = Model.newInstance();
+        Model model = Model.newInstance("classifier");
         model.load(modelDir);
 
         final String className = "cat";
@@ -97,6 +102,12 @@ public class InferenceTest {
                         return new Classifications(
                                 Collections.singletonList(className),
                                 Collections.singletonList(0.9d));
+                    }
+
+                    /** {@inheritDoc} */
+                    @Override
+                    public Batchifier getBatchifier() {
+                        return null;
                     }
                 };
         Metrics metrics = new Metrics();
@@ -123,8 +134,8 @@ public class InferenceTest {
         Path modelDir = Paths.get("build/non-exist-model");
         String modelName = "mockModel";
 
-        try (Model model = Model.newInstance()) {
-            model.load(modelDir, modelName);
+        try (Model model = Model.newInstance(modelName)) {
+            model.load(modelDir);
         }
     }
 }
